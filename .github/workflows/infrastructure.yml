@@ -11,7 +11,7 @@ on:
         type: boolean
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-south-1
   
 jobs:
   infrastructure:
@@ -42,10 +42,26 @@ jobs:
         #!/bin/bash
         set -e
         
-        echo "🏗️ Setting up AWS infrastructure for FinBERT RAG App..."
+        echo "🏗️ Setting up AWS infrastructure for FinBERT RAG App in ap-south-1..."
+        
+        # Cleanup any existing instances in us-east-1 first
+        echo "🧹 Cleaning up existing instances in us-east-1..."
+        export AWS_DEFAULT_REGION=us-east-1
+        EXISTING_INSTANCE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=finbert-rag-instance" "Name=instance-state-name,Values=running,pending" --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null || echo "")
+        if [ -n "$EXISTING_INSTANCE" ] && [ "$EXISTING_INSTANCE" != "None" ]; then
+          echo "🛑 Terminating existing instance: $EXISTING_INSTANCE"
+          aws ec2 terminate-instances --instance-ids $EXISTING_INSTANCE
+          echo "⏳ Waiting for instance termination..."
+          aws ec2 wait instance-terminated --instance-ids $EXISTING_INSTANCE
+          echo "✅ Instance terminated"
+        fi
+        
+        # Switch to ap-south-1
+        export AWS_DEFAULT_REGION=ap-south-1
+        echo "🌏 Switched to ap-south-1 region"
         
         # Check available free tier instance types
-        echo "🔍 Checking free tier eligible instance types..."
+        echo "🔍 Checking free tier eligible instance types in ap-south-1..."
         aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType' --output text || echo "Could not check free tier types"
         
         # Create key pair if it doesn't exist
@@ -164,9 +180,11 @@ jobs:
           
           echo "🔍 Using AMI: $AMI_ID in region: $(aws configure get region)"
           
-          # Try t2.micro first, fallback to t3.micro if needed
+          # Try t2.micro first
           INSTANCE_TYPE="t2.micro"
+          echo "🚀 Attempting to launch $INSTANCE_TYPE instance..."
           
+          set +e  # Allow command to fail
           INSTANCE_ID=$(aws ec2 run-instances \
             --image-id $AMI_ID \
             --count 1 \
@@ -176,22 +194,26 @@ jobs:
             --user-data file://user_data.sh \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
             --query 'Instances[0].InstanceId' \
-            --output text || {
-              echo "⚠️ t2.micro failed, trying t3.micro..."
-              INSTANCE_TYPE="t3.micro"
-              aws ec2 run-instances \
-                --image-id $AMI_ID \
-                --count 1 \
-                --instance-type $INSTANCE_TYPE \
-                --key-name $KEY_NAME \
-                --security-group-ids $SG_ID \
-                --user-data file://user_data.sh \
-                --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
-                --query 'Instances[0].InstanceId' \
-                --output text
-            })
+            --output text 2>/dev/null)
           
-          echo "✅ Using instance type: $INSTANCE_TYPE"
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
+            echo "⚠️ t2.micro failed, trying t3.micro..."
+            INSTANCE_TYPE="t3.micro"
+            INSTANCE_ID=$(aws ec2 run-instances \
+              --image-id $AMI_ID \
+              --count 1 \
+              --instance-type $INSTANCE_TYPE \
+              --key-name $KEY_NAME \
+              --security-group-ids $SG_ID \
+              --user-data file://user_data.sh \
+              --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
+              --query 'Instances[0].InstanceId' \
+              --output text)
+          fi
+          set -e  # Re-enable exit on error
+          
+          echo "✅ Instance launched with type: $INSTANCE_TYPE"
+          echo "✅ Instance ID: $INSTANCE_ID"
           
           echo "✅ EC2 instance launched: $INSTANCE_ID"
           
@@ -199,13 +221,43 @@ jobs:
           echo "⏳ Waiting for instance to be running..."
           aws ec2 wait instance-running --instance-ids $INSTANCE_ID
           
-          # Get public IP
+          # Get or create Elastic IP
+          echo "🌐 Setting up Elastic IP..."
+          
+          # Check for existing unassigned Elastic IP
+          EXISTING_EIP=$(aws ec2 describe-addresses --filters "Name=domain,Values=vpc" --query 'Addresses[?InstanceId==null][0].AllocationId' --output text 2>/dev/null || echo "")
+          
+          if [ -n "$EXISTING_EIP" ] && [ "$EXISTING_EIP" != "None" ]; then
+            echo "✅ Found existing unassigned Elastic IP: $EXISTING_EIP"
+            ALLOCATION_ID=$EXISTING_EIP
+            ELASTIC_IP=$(aws ec2 describe-addresses --allocation-ids $ALLOCATION_ID --query 'Addresses[0].PublicIp' --output text)
+          else
+            echo "🆕 Creating new Elastic IP..."
+            ALLOCATION_ID=$(aws ec2 allocate-address --domain vpc --query 'AllocationId' --output text)
+            ELASTIC_IP=$(aws ec2 describe-addresses --allocation-ids $ALLOCATION_ID --query 'Addresses[0].PublicIp' --output text)
+            echo "✅ Created new Elastic IP: $ELASTIC_IP ($ALLOCATION_ID)"
+          fi
+          
+          # Associate Elastic IP with instance
+          echo "🔗 Associating Elastic IP with instance..."
+          ASSOCIATION_ID=$(aws ec2 associate-address --instance-id $INSTANCE_ID --allocation-id $ALLOCATION_ID --query 'AssociationId' --output text)
+          echo "✅ Elastic IP associated: $ASSOCIATION_ID"
+          
+          # Get final public IP (should be the Elastic IP)
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-          echo "🌐 Instance Public IP: $PUBLIC_IP"
+          echo "🌐 Instance Public IP (Elastic): $PUBLIC_IP"
           
           echo "📋 IMPORTANT: Add these to your GitHub Secrets:"
           echo "EC2_INSTANCE_ID=$INSTANCE_ID"
           echo "EC2_HOST=$PUBLIC_IP"
+          echo "ELASTIC_IP_ALLOCATION_ID=$ALLOCATION_ID"
+          echo ""
+          echo "🎯 Instance Details:"
+          echo "Region: ap-south-1 (Mumbai)"
+          echo "Instance ID: $INSTANCE_ID"
+          echo "Instance Type: $INSTANCE_TYPE"
+          echo "Elastic IP: $PUBLIC_IP"
+          echo "Allocation ID: $ALLOCATION_ID"
           
         else
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text)
@@ -228,6 +280,8 @@ jobs:
         echo "🔗 Access URLs (after deployment):"
         echo "API: http://$PUBLIC_IP/api/docs"
         echo "Streamlit: http://$PUBLIC_IP/"
+        echo "Direct API: http://$PUBLIC_IP:8000/docs"
+        echo "Direct Streamlit: http://$PUBLIC_IP:8501"
         EOF
         
         chmod +x setup_infrastructure.sh
