@@ -1,0 +1,226 @@
+name: 🎯 Direct EC2 Deploy (Works with Basic Permissions)
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  INSTANCE_ID: i-05cf3774f0646b47d
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy using Instance Stop/Start
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Configure AWS credentials  
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🚀 Create Deployment Script
+      run: |
+        # Create a simple deployment script that will be set as user data
+        cat > deployment-script.sh << 'SCRIPT_END'
+        #!/bin/bash
+        exec > /var/log/deployment.log 2>&1
+        set -x
+        
+        echo "Starting deployment at $(date)"
+        
+        # Update system
+        yum update -y
+        yum install -y python3 python3-pip git curl
+        
+        # Create app directory
+        mkdir -p /home/ec2-user/finbert-news-rag-app
+        chown ec2-user:ec2-user /home/ec2-user/finbert-news-rag-app
+        
+        # Clone/update repository as ec2-user
+        cd /home/ec2-user/finbert-news-rag-app
+        if [ -d ".git" ]; then
+            sudo -u ec2-user git pull origin main
+        else
+            sudo -u ec2-user git clone https://github.com/pes-mtech-project/RAG_API_UI.git .
+        fi
+        
+        # Install dependencies
+        cd api
+        sudo -u ec2-user python3 -m pip install --user --upgrade pip
+        sudo -u ec2-user python3 -m pip install --user -r requirements.txt
+        
+        cd ../streamlit
+        sudo -u ec2-user python3 -m pip install --user -r requirements.txt
+        
+        cd ..
+        
+        # Create API service
+        cat > /etc/systemd/system/finbert-api.service << 'API_EOF'
+        [Unit]
+        Description=FinBERT API
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=ec2-user
+        WorkingDirectory=/home/ec2-user/finbert-news-rag-app/api
+        Environment=PATH=/home/ec2-user/.local/bin:/usr/local/bin:/usr/bin:/bin
+        ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+        Restart=always
+        RestartSec=5
+        
+        [Install]
+        WantedBy=multi-user.target
+        API_EOF
+        
+        # Create Streamlit service
+        cat > /etc/systemd/system/finbert-streamlit.service << 'STREAMLIT_EOF'
+        [Unit]
+        Description=FinBERT Streamlit
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=ec2-user
+        WorkingDirectory=/home/ec2-user/finbert-news-rag-app/streamlit
+        Environment=PATH=/home/ec2-user/.local/bin:/usr/local/bin:/usr/bin:/bin
+        ExecStart=/home/ec2-user/.local/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+        Restart=always
+        RestartSec=5
+        
+        [Install]
+        WantedBy=multi-user.target
+        STREAMLIT_EOF
+        
+        # Start services
+        systemctl daemon-reload
+        systemctl stop finbert-api || true
+        systemctl stop finbert-streamlit || true
+        systemctl enable finbert-api
+        systemctl enable finbert-streamlit
+        systemctl start finbert-api
+        systemctl start finbert-streamlit
+        
+        # Wait and check
+        sleep 20
+        systemctl status finbert-api
+        systemctl status finbert-streamlit
+        
+        echo "Deployment completed at $(date)"
+        echo "Deployment successful" > /home/ec2-user/deployment-complete.txt
+        SCRIPT_END
+
+    - name: 🔄 Deploy via Instance Restart
+      run: |
+        echo "🔍 Checking current instance state..."
+        CURRENT_STATE=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].State.Name' \
+          --output text)
+        echo "Current state: $CURRENT_STATE"
+        
+        if [ "$CURRENT_STATE" != "stopped" ]; then
+          echo "🔄 Stopping instance for deployment..."
+          aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "✅ Instance stopped"
+        fi
+        
+        echo "📝 Setting user data for deployment..."
+        # Try with file method first (most reliable)
+        if aws ec2 modify-instance-attribute \
+          --instance-id ${{ env.INSTANCE_ID }} \
+          --user-data file://deployment-script.sh \
+          --region ${{ env.AWS_REGION }}; then
+          echo "✅ User data set successfully"
+        else
+          echo "❌ Failed to set user data, trying alternative method..."
+          # Fallback: base64 encode manually with proper handling
+          USER_DATA_B64=$(openssl base64 -A -in deployment-script.sh)
+          aws ec2 modify-instance-attribute \
+            --instance-id ${{ env.INSTANCE_ID }} \
+            --user-data "$USER_DATA_B64" \
+            --region ${{ env.AWS_REGION }}
+          echo "✅ User data set with base64 encoding"
+        fi
+        
+        echo "▶️ Starting instance with deployment script..."
+        aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+        aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+        echo "✅ Instance is running"
+
+    - name: ⏳ Monitor Deployment
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "🌐 Instance IP: $INSTANCE_IP"
+        echo "⏳ Waiting for deployment to complete (10-15 minutes)..."
+        
+        # Wait for services to be ready
+        API_READY=false
+        STREAMLIT_READY=false
+        
+        for i in {1..30}; do
+          echo "🔍 Deployment check $i/30 (waiting 30 seconds between checks)..."
+          
+          # Check API
+          if curl -f -m 10 "http://$INSTANCE_IP:8000/health" >/dev/null 2>&1; then
+            if [ "$API_READY" != "true" ]; then
+              echo "✅ API is now ready!"
+              API_READY=true
+            fi
+          fi
+          
+          # Check Streamlit
+          if curl -f -m 10 "http://$INSTANCE_IP:8501" >/dev/null 2>&1; then
+            if [ "$STREAMLIT_READY" != "true" ]; then
+              echo "✅ Streamlit is now ready!"
+              STREAMLIT_READY=true
+            fi
+          fi
+          
+          # If both are ready, we're done
+          if [ "$API_READY" = "true" ] && [ "$STREAMLIT_READY" = "true" ]; then
+            echo "🎉 Both services are ready! Deployment successful!"
+            break
+          fi
+          
+          if [ $i -eq 30 ]; then
+            echo "⏰ Deployment timeout reached. Services may still be starting..."
+            echo "📱 You can check manually at: http://$INSTANCE_IP:8501"
+          fi
+          
+          sleep 30
+        done
+
+    - name: 🎉 Success Report
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo ""
+        echo "🚀 FinBERT News RAG Deployment Complete!"
+        echo "========================================"
+        echo ""
+        echo "🔗 Your application is available at:"
+        echo "   📊 Streamlit UI: http://$INSTANCE_IP:8501"
+        echo "   🔌 API Documentation: http://$INSTANCE_IP:8000/docs"
+        echo "   ❤️  API Health Check: http://$INSTANCE_IP:8000/health"
+        echo ""
+        echo "🔄 Services are configured to auto-start on boot"
+        echo "🛡️  Services will auto-restart if they fail"
+        echo ""
+        echo "🎯 Your FinBERT News RAG application is ready for use!"

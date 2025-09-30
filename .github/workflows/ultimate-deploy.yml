@@ -183,9 +183,6 @@ jobs:
         
         EOF
         
-        # Base64 encode the user data
-        USER_DATA_B64=$(base64 -w 0 user-data.sh)
-        
         echo "📊 Current instance state:"
         aws ec2 describe-instances \
           --instance-ids ${{ env.INSTANCE_ID }} \
@@ -202,7 +199,7 @@ jobs:
           echo "📝 Setting deployment user data..."
           aws ec2 modify-instance-attribute \
             --instance-id ${{ env.INSTANCE_ID }} \
-            --user-data "$USER_DATA_B64" \
+            --user-data file://user-data.sh \
             --region ${{ env.AWS_REGION }}
           echo "✅ User data configured"
           
@@ -214,7 +211,7 @@ jobs:
           echo "⚠️ Skipping restart - just updating user data for next boot"
           aws ec2 modify-instance-attribute \
             --instance-id ${{ env.INSTANCE_ID }} \
-            --user-data "$USER_DATA_B64" \
+            --user-data file://user-data.sh \
             --region ${{ env.AWS_REGION }}
         fi
 
