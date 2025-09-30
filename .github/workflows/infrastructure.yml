@@ -44,6 +44,10 @@ jobs:
         
         echo "🏗️ Setting up AWS infrastructure for FinBERT RAG App..."
         
+        # Check available free tier instance types
+        echo "🔍 Checking free tier eligible instance types..."
+        aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType' --output text || echo "Could not check free tier types"
+        
         # Create key pair if it doesn't exist
         KEY_NAME="finbert-rag-key"
         if ! aws ec2 describe-key-pairs --key-names $KEY_NAME >/dev/null 2>&1; then
@@ -151,16 +155,43 @@ jobs:
         echo "✅ EC2 instance setup completed"
         USERDATA
           
+          # Get the latest Amazon Linux 2023 AMI for the current region
+          AMI_ID=$(aws ec2 describe-images \
+            --owners amazon \
+            --filters 'Name=name,Values=al2023-ami-*-x86_64' 'Name=state,Values=available' \
+            --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
+            --output text)
+          
+          echo "🔍 Using AMI: $AMI_ID in region: $(aws configure get region)"
+          
+          # Try t2.micro first, fallback to t3.micro if needed
+          INSTANCE_TYPE="t2.micro"
+          
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0c02fb55956c7d316 \
+            --image-id $AMI_ID \
             --count 1 \
-            --instance-type t2.micro \
+            --instance-type $INSTANCE_TYPE \
             --key-name $KEY_NAME \
             --security-group-ids $SG_ID \
             --user-data file://user_data.sh \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
             --query 'Instances[0].InstanceId' \
-            --output text)
+            --output text || {
+              echo "⚠️ t2.micro failed, trying t3.micro..."
+              INSTANCE_TYPE="t3.micro"
+              aws ec2 run-instances \
+                --image-id $AMI_ID \
+                --count 1 \
+                --instance-type $INSTANCE_TYPE \
+                --key-name $KEY_NAME \
+                --security-group-ids $SG_ID \
+                --user-data file://user_data.sh \
+                --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
+                --query 'Instances[0].InstanceId' \
+                --output text
+            })
+          
+          echo "✅ Using instance type: $INSTANCE_TYPE"
           
           echo "✅ EC2 instance launched: $INSTANCE_ID"
           
