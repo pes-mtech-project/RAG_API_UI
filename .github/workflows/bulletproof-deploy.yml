@@ -1,0 +1,198 @@
+name: 🚀 Bulletproof Deploy to AWS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  INSTANCE_ID: i-05cf3774f0646b47d
+  APP_DIR: /home/ec2-user/finbert-news-rag-app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy to EC2
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🔑 Generate temporary SSH key
+      run: |
+        ssh-keygen -t rsa -b 4096 -f /tmp/temp_key -N ""
+        chmod 600 /tmp/temp_key
+        
+    - name: 📤 Send SSH key to EC2
+      run: |
+        # Send the public key using EC2 Instance Connect
+        aws ec2-instance-connect send-ssh-public-key \
+          --instance-id ${{ env.INSTANCE_ID }} \
+          --availability-zone ${AWS_REGION}a \
+          --instance-os-user ec2-user \
+          --ssh-public-key file:///tmp/temp_key.pub || {
+          
+          # If Instance Connect fails, use Systems Manager
+          echo "Instance Connect failed, using Systems Manager..."
+          
+          TEMP_PUBLIC_KEY=$(cat /tmp/temp_key.pub)
+          aws ssm send-command \
+            --instance-ids ${{ env.INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="mkdir -p /home/ec2-user/.ssh && echo '$TEMP_PUBLIC_KEY' >> /home/ec2-user/.ssh/authorized_keys && chmod 600 /home/ec2-user/.ssh/authorized_keys && chown ec2-user:ec2-user /home/ec2-user/.ssh/authorized_keys" \
+            --region ${{ env.AWS_REGION }}
+          
+          # Wait for command to execute
+          sleep 30
+        }
+
+    - name: 🚀 Deploy Application
+      run: |
+        # Get instance IP
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "Instance IP: $INSTANCE_IP"
+        
+        # Add to known hosts
+        ssh-keyscan -H $INSTANCE_IP >> ~/.ssh/known_hosts
+        
+        # Create deployment script on the fly
+        cat > /tmp/deploy_script.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        echo "🚀 Starting bulletproof deployment..."
+        sudo yum update -y
+        sudo yum install -y python3 python3-pip git htop
+        sudo mkdir -p /home/ec2-user/finbert-news-rag-app
+        sudo chown ec2-user:ec2-user /home/ec2-user/finbert-news-rag-app
+        cd /home/ec2-user/finbert-news-rag-app
+        if [ -d ".git" ]; then
+            echo "📥 Updating existing repository..."
+            git pull origin main
+        else
+            echo "📥 Cloning repository..."
+            git clone https://github.com/pes-mtech-project/RAG_API_UI.git .
+        fi
+        sudo systemctl stop finbert-api || true
+        sudo systemctl stop finbert-streamlit || true
+        echo "🔧 Installing API dependencies..."
+        cd api
+        python3 -m pip install --user --upgrade pip
+        python3 -m pip install --user -r requirements.txt
+        echo "🔧 Installing Streamlit dependencies..."
+        cd ../streamlit  
+        python3 -m pip install --user -r requirements.txt
+        cd ..
+        EOF
+        
+        # Create systemd services
+        cat > /tmp/api_service.txt << 'EOF'
+        [Unit]
+        Description=FinBERT News RAG API Service
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=ec2-user
+        WorkingDirectory=/home/ec2-user/finbert-news-rag-app/api
+        Environment=PATH=/home/ec2-user/.local/bin:/usr/local/bin:/usr/bin:/bin
+        ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
+        Restart=always
+        RestartSec=3
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+        cat > /tmp/streamlit_service.txt << 'EOF'
+        [Unit]
+        Description=FinBERT News RAG Streamlit Service
+        After=network.target
+        
+        [Service]
+        Type=simple
+        User=ec2-user
+        WorkingDirectory=/home/ec2-user/finbert-news-rag-app/streamlit
+        Environment=PATH=/home/ec2-user/.local/bin:/usr/local/bin:/usr/bin:/bin
+        ExecStart=/home/ec2-user/.local/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+        Restart=always
+        RestartSec=3
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+        # Add final commands to deployment script
+        cat >> /tmp/deploy_script.sh << 'EOF'
+        sudo cp /tmp/api_service.txt /etc/systemd/system/finbert-api.service
+        sudo cp /tmp/streamlit_service.txt /etc/systemd/system/finbert-streamlit.service
+        sudo systemctl daemon-reload
+        sudo systemctl enable finbert-api
+        sudo systemctl enable finbert-streamlit
+        sudo systemctl start finbert-api
+        sudo systemctl start finbert-streamlit
+        sleep 15
+        echo "🏥 Running health checks..."
+        curl -f http://localhost:8000/health || echo "API not ready yet"
+        curl -f http://localhost:8501 || echo "Streamlit not ready yet"
+        echo "🎉 Deployment completed!"
+        EOF
+
+        # Copy and execute deployment script
+        scp -i /tmp/temp_key -o StrictHostKeyChecking=no /tmp/deploy_script.sh ec2-user@$INSTANCE_IP:/tmp/
+        ssh -i /tmp/temp_key -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP "chmod +x /tmp/deploy_script.sh && /tmp/deploy_script.sh"
+
+    - name: 🧪 Final Health Check
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "🔍 Final verification..."
+        
+        # Test API
+        if curl -f "http://$INSTANCE_IP:8000/health" > /dev/null 2>&1; then
+          echo "✅ API is live and healthy"
+        else
+          echo "❌ API health check failed"
+          exit 1
+        fi
+        
+        # Test Streamlit
+        if curl -f "http://$INSTANCE_IP:8501" > /dev/null 2>&1; then
+          echo "✅ Streamlit is live and accessible"
+        else
+          echo "❌ Streamlit health check failed"
+          exit 1
+        fi
+
+    - name: 🎉 Deployment Success
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "🚀 FinBERT News RAG App Successfully Deployed!"
+        echo "================================================"
+        echo "🔗 Access URLs:"
+        echo "   📊 Streamlit UI: http://$INSTANCE_IP:8501"
+        echo "   🔌 API Docs: http://$INSTANCE_IP:8000/docs"
+        echo "   ❤️  Health Check: http://$INSTANCE_IP:8000/health"
+        echo ""
+        echo "🎯 Ready for production use!"
