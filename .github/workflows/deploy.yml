@@ -1,0 +1,264 @@
+# 🚀 CI/CD DEPLOYMENT MAIN WORKFLOW
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+  
+jobs:
+  # ===== TESTING STAGE =====
+  test:
+    runs-on: ubuntu-latest
+    name: 🧪 Run Tests
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: 🔧 Install API dependencies
+      run: |
+        cd api
+        pip install -r requirements.txt
+        
+    - name: 🔧 Install Streamlit dependencies  
+      run: |
+        cd streamlit
+        pip install -r requirements.txt
+        
+    - name: ✅ Test API imports
+      run: |
+        cd api
+        python -c "
+        try:
+            from main import app
+            print('✅ FastAPI app imports successfully')
+        except Exception as e:
+            print(f'❌ FastAPI import failed: {e}')
+            exit(1)
+        "
+        
+    - name: ✅ Test Streamlit imports
+      run: |
+        cd streamlit  
+        python -c "
+        try:
+            import streamlit as st
+            import requests
+            import pandas as pd
+            import plotly
+            print('✅ Streamlit dependencies import successfully')
+        except Exception as e:
+            print(f'❌ Streamlit imports failed: {e}')
+            exit(1)
+        "
+
+  # ===== BUILD STAGE =====
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    name: 🏗️ Build Application
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install dependencies
+      run: |
+        cd api && pip install -r requirements.txt
+        cd ../streamlit && pip install -r requirements.txt
+        
+    - name: 🔍 Validate configuration files
+      run: |
+        echo "✅ Checking API configuration..."
+        if [ -f "api/main.py" ]; then
+          echo "✅ API main.py exists"
+        else
+          echo "❌ API main.py missing"
+          exit 1
+        fi
+        
+        echo "✅ Checking Streamlit configuration..."
+        if [ -f "streamlit/app.py" ]; then
+          echo "✅ Streamlit app.py exists"  
+        else
+          echo "❌ Streamlit app.py missing"
+          exit 1
+        fi
+        
+        echo "✅ Checking requirements files..."
+        if [ -f "api/requirements.txt" ] && [ -f "streamlit/requirements.txt" ]; then
+          echo "✅ Requirements files exist"
+        else
+          echo "❌ Requirements files missing"
+          exit 1
+        fi
+
+  # ===== DEPLOYMENT STAGE =====
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, build]
+    if: github.ref == 'refs/heads/main'
+    name: 🚀 Deploy to AWS EC2
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔑 Setup SSH
+      uses: webfactory/ssh-agent@v0.7.0
+      with:
+        ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        
+    - name: 📡 Deploy to EC2
+      run: |
+        # Add EC2 to known hosts
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+        
+        # Create deployment script
+        cat > deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 Starting deployment to EC2..."
+        
+        # Navigate to application directory
+        cd /home/ec2-user/finbert-news-rag-app || {
+          echo "❌ Application directory not found"
+          exit 1
+        }
+        
+        # Pull latest changes
+        echo "📥 Pulling latest code..."
+        git pull origin main
+        
+        # Stop existing services
+        echo "🛑 Stopping existing services..."
+        sudo systemctl stop finbert-api || true
+        sudo systemctl stop finbert-streamlit || true
+        
+        # Update API dependencies
+        echo "🔧 Updating API dependencies..."
+        cd api
+        python3.11 -m pip install -r requirements.txt --user --upgrade
+        
+        # Update Streamlit dependencies
+        echo "🔧 Updating Streamlit dependencies..."  
+        cd ../streamlit
+        python3.11 -m pip install -r requirements.txt --user --upgrade
+        
+        # Go back to root
+        cd ..
+        
+        # Start services
+        echo "▶️ Starting services..."
+        sudo systemctl start finbert-api
+        sudo systemctl start finbert-streamlit
+        sudo systemctl enable finbert-api
+        sudo systemctl enable finbert-streamlit
+        
+        # Wait for services to start
+        sleep 10
+        
+        # Health check
+        echo "🏥 Running health checks..."
+        if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+          echo "✅ API health check passed"
+        else
+          echo "❌ API health check failed"
+          sudo systemctl status finbert-api
+          exit 1
+        fi
+        
+        if curl -f http://localhost:8501 > /dev/null 2>&1; then
+          echo "✅ Streamlit health check passed"
+        else
+          echo "❌ Streamlit health check failed"
+          sudo systemctl status finbert-streamlit
+          exit 1
+        fi
+        
+        echo "🎉 Deployment completed successfully!"
+        EOF
+        
+        # Make script executable and run on EC2
+        chmod +x deploy.sh
+        scp deploy.sh ec2-user@${{ secrets.EC2_HOST }}:/tmp/deploy.sh
+        ssh ec2-user@${{ secrets.EC2_HOST }} "bash /tmp/deploy.sh"
+        
+    - name: 🏥 Post-deployment health check
+      run: |
+        echo "🔍 Running external health checks..."
+        
+        # Wait for services to be fully ready
+        sleep 30
+        
+        # Check API endpoint
+        if curl -f "http://${{ secrets.EC2_HOST }}:8000/health" > /dev/null 2>&1; then
+          echo "✅ External API health check passed"
+        else
+          echo "⚠️ External API health check failed (might be behind ALB)"
+        fi
+        
+        echo "🎉 Deployment pipeline completed!"
+
+  # ===== NOTIFICATION STAGE =====
+  notify:
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: always()
+    name: 📧 Send Notifications
+    
+    steps:
+    - name: 📧 Notify deployment status
+      uses: 8398a7/action-slack@v3
+      if: always()
+      with:
+        status: ${{ job.status }}
+        text: |
+          🚀 FinBERT RAG App Deployment Status: ${{ job.status }}
+          
+          📊 Details:
+          • Repository: ${{ github.repository }}
+          • Branch: ${{ github.ref }}
+          • Commit: ${{ github.sha }}
+          • Author: ${{ github.actor }}
+          
+          🔗 Links:
+          • API: http://${{ secrets.EC2_HOST }}:8000/docs
+          • Streamlit: http://${{ secrets.EC2_HOST }}:8501
+          • Repository: https://github.com/${{ github.repository }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Optional

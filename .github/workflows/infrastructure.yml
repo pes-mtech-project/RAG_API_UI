@@ -1,0 +1,227 @@
+# 🔧 INFRASTRUCTURE SETUP WORKFLOW
+name: Setup AWS Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      destroy:
+        description: 'Destroy infrastructure'
+        required: false
+        default: 'false'
+        type: boolean
+
+env:
+  AWS_REGION: us-east-1
+  
+jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    name: 🏗️ Manage AWS Infrastructure
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: 🔧 Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+        
+    - name: 🏗️ Create infrastructure
+      if: ${{ !inputs.destroy }}
+      run: |
+        # Create infrastructure setup script
+        cat > setup_infrastructure.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        echo "🏗️ Setting up AWS infrastructure for FinBERT RAG App..."
+        
+        # Create key pair if it doesn't exist
+        KEY_NAME="finbert-rag-key"
+        if ! aws ec2 describe-key-pairs --key-names $KEY_NAME >/dev/null 2>&1; then
+          echo "🔑 Creating EC2 Key Pair..."
+          aws ec2 create-key-pair --key-name $KEY_NAME --query 'KeyMaterial' --output text > finbert-rag-key.pem
+          chmod 600 finbert-rag-key.pem
+          echo "✅ Key pair created: finbert-rag-key.pem"
+        else
+          echo "✅ Key pair already exists"
+        fi
+        
+        # Create security group
+        SG_NAME="finbert-rag-sg"
+        VPC_ID=$(aws ec2 describe-vpcs --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text)
+        
+        if ! aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" >/dev/null 2>&1; then
+          echo "🛡️ Creating Security Group..."
+          SG_ID=$(aws ec2 create-security-group \
+            --group-name $SG_NAME \
+            --description "Security group for FinBERT RAG App" \
+            --vpc-id $VPC_ID \
+            --query 'GroupId' --output text)
+          
+          # Add security group rules
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 22 --cidr 0.0.0.0/0
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 80 --cidr 0.0.0.0/0  
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 443 --cidr 0.0.0.0/0
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 8000 --cidr 0.0.0.0/0
+          aws ec2 authorize-security-group-ingress --group-id $SG_ID --protocol tcp --port 8501 --cidr 0.0.0.0/0
+          
+          echo "✅ Security group created: $SG_ID"
+        else
+          SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" --query 'SecurityGroups[0].GroupId' --output text)
+          echo "✅ Security group already exists: $SG_ID"
+        fi
+        
+        # Launch EC2 instance
+        INSTANCE_NAME="finbert-rag-instance"
+        if ! aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text | grep -v "None" >/dev/null 2>&1; then
+          echo "🚀 Launching EC2 instance..."
+          
+          # User data script for instance initialization
+          cat > user_data.sh << 'USERDATA'
+        #!/bin/bash
+        yum update -y
+        yum install -y python3.11 python3.11-pip git nginx
+        
+        # Install additional dependencies
+        python3.11 -m pip install --upgrade pip
+        
+        # Create application user
+        useradd -m -s /bin/bash appuser || true
+        
+        # Clone the repository (will be updated via CI/CD)
+        cd /home/ec2-user
+        git clone https://github.com/pes-mtech-project/RAG_API_UI.git finbert-news-rag-app || true
+        chown -R ec2-user:ec2-user finbert-news-rag-app
+        
+        # Setup nginx reverse proxy
+        cat > /etc/nginx/conf.d/finbert-rag.conf << 'NGINX'
+        server {
+            listen 80;
+            server_name _;
+            
+            # API routes
+            location /api/ {
+                proxy_pass http://localhost:8000/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+            }
+            
+            # Health check
+            location /health {
+                proxy_pass http://localhost:8000/health;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+            }
+            
+            # Streamlit app (default)
+            location / {
+                proxy_pass http://localhost:8501/;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+                
+                # WebSocket support for Streamlit
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+            }
+        }
+        NGINX
+        
+        # Enable and start nginx
+        systemctl enable nginx
+        systemctl start nginx
+        
+        echo "✅ EC2 instance setup completed"
+        USERDATA
+          
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0c02fb55956c7d316 \
+            --count 1 \
+            --instance-type t2.micro \
+            --key-name $KEY_NAME \
+            --security-group-ids $SG_ID \
+            --user-data file://user_data.sh \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+          
+          echo "✅ EC2 instance launched: $INSTANCE_ID"
+          
+          # Wait for instance to be running
+          echo "⏳ Waiting for instance to be running..."
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          
+          # Get public IP
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          echo "🌐 Instance Public IP: $PUBLIC_IP"
+          
+          echo "📋 IMPORTANT: Add these to your GitHub Secrets:"
+          echo "EC2_INSTANCE_ID=$INSTANCE_ID"
+          echo "EC2_HOST=$PUBLIC_IP"
+          
+        else
+          INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
+          echo "✅ Instance already running: $INSTANCE_ID"
+          echo "🌐 Instance Public IP: $PUBLIC_IP"
+        fi
+        
+        # Create Application Load Balancer (optional, for production)
+        # This would go here if needed for higher availability
+        
+        echo "🎉 Infrastructure setup completed!"
+        echo ""
+        echo "📋 Next steps:"
+        echo "1. Add EC2_INSTANCE_ID=$INSTANCE_ID to GitHub Secrets"
+        echo "2. Add EC2_HOST=$PUBLIC_IP to GitHub Secrets"  
+        echo "3. Add your private key to EC2_SSH_PRIVATE_KEY secret"
+        echo "4. Run the deployment workflow"
+        echo ""
+        echo "🔗 Access URLs (after deployment):"
+        echo "API: http://$PUBLIC_IP/api/docs"
+        echo "Streamlit: http://$PUBLIC_IP/"
+        EOF
+        
+        chmod +x setup_infrastructure.sh
+        ./setup_infrastructure.sh
+        
+    - name: 🧹 Destroy infrastructure
+      if: ${{ inputs.destroy }}
+      run: |
+        echo "🧹 Destroying AWS infrastructure..."
+        
+        # Get instance ID
+        INSTANCE_NAME="finbert-rag-instance"
+        INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" --query 'Reservations[0].Instances[0].InstanceId' --output text)
+        
+        if [ "$INSTANCE_ID" != "None" ] && [ -n "$INSTANCE_ID" ]; then
+          echo "🛑 Terminating EC2 instance: $INSTANCE_ID"
+          aws ec2 terminate-instances --instance-ids $INSTANCE_ID
+          aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID
+          echo "✅ Instance terminated"
+        fi
+        
+        # Clean up security group
+        SG_NAME="finbert-rag-sg"
+        SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+        if [ -n "$SG_ID" ] && [ "$SG_ID" != "None" ]; then
+          echo "🛡️ Deleting security group: $SG_ID"
+          aws ec2 delete-security-group --group-id $SG_ID
+          echo "✅ Security group deleted"
+        fi
+        
+        # Note: Key pair is kept for reuse
+        echo "🎉 Infrastructure cleanup completed!"
