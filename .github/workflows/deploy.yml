@@ -1,0 +1,240 @@
+name: 🚀 Deploy FinBERT App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/infrastructure.yml'
+      - '.github/workflows/development.yml'
+
+env:
+  AWS_REGION: ap-south-1
+  INSTANCE_ID: i-05cf3774f0646b47d
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy to EC2
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 📋 Create Simple Deployment Script
+      run: |
+        # Create a simple deployment script that we'll put on the instance
+        cat > deploy_app.sh << 'DEPLOY_SCRIPT'
+        #!/bin/bash
+        set -e
+        
+        echo "🚀 Starting FinBERT App Deployment..."
+        
+        # Update system
+        sudo yum update -y
+        sudo yum install -y python3 python3-pip git
+        
+        # Create app directory
+        sudo mkdir -p /home/ec2-user/finbert-news-rag-app
+        sudo chown ec2-user:ec2-user /home/ec2-user/finbert-news-rag-app
+        
+        # Navigate to app directory
+        cd /home/ec2-user/finbert-news-rag-app
+        
+        # Clone or update code
+        if [ -d ".git" ]; then
+            echo "📥 Updating code..."
+            git pull origin main
+        else
+            echo "📥 Cloning repository..."
+            git clone https://github.com/pes-mtech-project/RAG_API_UI.git .
+        fi
+        
+        # Install API dependencies
+        echo "🔧 Installing API dependencies..."
+        cd api
+        python3 -m pip install --user --upgrade pip
+        python3 -m pip install --user -r requirements.txt
+        
+        # Install Streamlit dependencies
+        echo "🔧 Installing Streamlit dependencies..."
+        cd ../streamlit
+        python3 -m pip install --user -r requirements.txt
+        cd ..
+        
+        # Kill existing processes
+        echo "🛑 Stopping existing services..."
+        pkill -f "uvicorn main:app" || true
+        pkill -f "streamlit run" || true
+        sleep 5
+        
+        # Start API in background
+        echo "🚀 Starting API..."
+        cd api
+        nohup python3 -m uvicorn main:app --host 0.0.0.0 --port 8000 > /home/ec2-user/api.log 2>&1 &
+        API_PID=$!
+        echo $API_PID > /home/ec2-user/api.pid
+        
+        # Start Streamlit in background
+        echo "🚀 Starting Streamlit..."
+        cd ../streamlit
+        nohup /home/ec2-user/.local/bin/streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true > /home/ec2-user/streamlit.log 2>&1 &
+        STREAMLIT_PID=$!
+        echo $STREAMLIT_PID > /home/ec2-user/streamlit.pid
+        
+        # Wait for services to start
+        echo "⏳ Waiting for services to start..."
+        sleep 15
+        
+        # Check if services are running
+        if ps -p $API_PID > /dev/null; then
+            echo "✅ API is running (PID: $API_PID)"
+        else
+            echo "❌ API failed to start"
+            exit 1
+        fi
+        
+        if ps -p $STREAMLIT_PID > /dev/null; then
+            echo "✅ Streamlit is running (PID: $STREAMLIT_PID)"
+        else
+            echo "❌ Streamlit failed to start"
+            exit 1
+        fi
+        
+        # Health checks
+        echo "🏥 Running health checks..."
+        for i in {1..10}; do
+            if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+                echo "✅ API health check passed"
+                break
+            else
+                echo "⏳ API health check $i/10..."
+                sleep 3
+            fi
+        done
+        
+        for i in {1..10}; do
+            if curl -f http://localhost:8501 > /dev/null 2>&1; then
+                echo "✅ Streamlit health check passed"
+                break
+        else
+                echo "⏳ Streamlit health check $i/10..."
+                sleep 3
+            fi
+        done
+        
+        echo "🎉 Deployment completed successfully!"
+        echo "Deployment completed at: $(date)" > /home/ec2-user/deployment-status.txt
+        DEPLOY_SCRIPT
+
+    - name: 🚀 Execute Deployment
+      run: |
+        # Get instance IP
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "🌐 Instance IP: $INSTANCE_IP"
+        
+        # Check if instance is running
+        INSTANCE_STATE=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].State.Name' \
+          --output text)
+        
+        echo "📊 Instance state: $INSTANCE_STATE"
+        
+        if [ "$INSTANCE_STATE" != "running" ]; then
+          echo "▶️ Starting instance..."
+          aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+          echo "✅ Instance is now running"
+          sleep 30  # Wait for instance to be fully ready
+        fi
+        
+        # Create a simple user data script that just downloads and runs our deployment
+        cat > user_data_simple.sh << 'USERDATA'
+        #!/bin/bash
+        cd /tmp
+        curl -o deploy_app.sh https://raw.githubusercontent.com/pes-mtech-project/RAG_API_UI/main/deploy_app.sh
+        chmod +x deploy_app.sh
+        ./deploy_app.sh > deployment.log 2>&1
+        USERDATA
+        
+        # Stop instance to set user data
+        echo "🔄 Preparing instance for deployment..."
+        aws ec2 stop-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+        aws ec2 wait instance-stopped --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+        
+        # Set simple user data (no encoding issues)
+        aws ec2 modify-instance-attribute \
+          --instance-id ${{ env.INSTANCE_ID }} \
+          --user-data file://user_data_simple.sh \
+          --region ${{ env.AWS_REGION }}
+        
+        # Start instance
+        echo "▶️ Starting instance for deployment..."
+        aws ec2 start-instances --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+        aws ec2 wait instance-running --instance-ids ${{ env.INSTANCE_ID }} --region ${{ env.AWS_REGION }}
+
+    - name: ⏳ Monitor Deployment
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "⏳ Monitoring deployment progress..."
+        echo "🌐 Application will be available at: http://$INSTANCE_IP:8501"
+        
+        # Wait for deployment (give it time to complete)
+        for i in {1..20}; do
+          echo "🔍 Checking deployment progress... ($i/20)"
+          
+          # Try to reach the API
+          if curl -f -m 10 "http://$INSTANCE_IP:8000/health" > /dev/null 2>&1; then
+            echo "✅ API is responding!"
+            API_READY=true
+            break
+          fi
+          
+          if [ $i -eq 20 ]; then
+            echo "⏰ Deployment is taking longer than expected"
+            echo "📱 Please check manually: http://$INSTANCE_IP:8501"
+            echo "📝 You can also check logs by SSH'ing into the instance"
+          fi
+          
+          sleep 30
+        done
+
+    - name: ✅ Deployment Complete
+      run: |
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --region ${{ env.AWS_REGION }} \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo ""
+        echo "🎉 FinBERT News RAG Deployment Initiated!"
+        echo "========================================"
+        echo ""
+        echo "🔗 Your application should be available at:"
+        echo "   📊 Streamlit UI: http://$INSTANCE_IP:8501"
+        echo "   🔌 API Docs: http://$INSTANCE_IP:8000/docs"
+        echo "   ❤️  Health Check: http://$INSTANCE_IP:8000/health"
+        echo ""
+        echo "⏳ Note: It may take a few more minutes for all services to be fully ready"
+        echo "🔧 If you need to troubleshoot, check /tmp/deployment.log on the EC2 instance"
