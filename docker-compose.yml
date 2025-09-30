@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  # FastAPI Backend
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./.env:/app/.env
+    networks:
+      - rag_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Streamlit Frontend
+  streamlit:
+    build: ./streamlit
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    networks:
+      - rag_network
+    environment:
+      - API_BASE_URL=http://api:8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  rag_network:
+    driver: bridge
