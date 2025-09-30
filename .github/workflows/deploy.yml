@@ -154,15 +154,28 @@ jobs:
         
         echo "🚀 Starting deployment to EC2..."
         
-        # Navigate to application directory
-        cd /home/ec2-user/finbert-news-rag-app || {
-          echo "❌ Application directory not found"
-          exit 1
-        }
+        # Create application directory if it doesn't exist
+        if [ ! -d "/home/ec2-user/finbert-news-rag-app" ]; then
+          echo "📁 Creating application directory..."
+          mkdir -p /home/ec2-user/finbert-news-rag-app
+          cd /home/ec2-user/finbert-news-rag-app
+          
+          # Clone the repository
+          echo "📥 Cloning repository..."
+          git clone https://github.com/pes-mtech-project/RAG_API_UI.git .
+        else
+          echo "📁 Application directory exists, updating..."
+          cd /home/ec2-user/finbert-news-rag-app
+          
+          # Pull latest changes
+          echo "📥 Pulling latest code..."
+          git pull origin main
+        fi
         
-        # Pull latest changes
-        echo "📥 Pulling latest code..."
-        git pull origin main
+        # Install system dependencies if needed
+        echo "🔧 Installing system dependencies..."
+        sudo yum update -y
+        sudo yum install -y python3-pip git
         
         # Stop existing services
         echo "🛑 Stopping existing services..."
@@ -172,15 +185,21 @@ jobs:
         # Update API dependencies
         echo "🔧 Updating API dependencies..."
         cd api
-        python3.11 -m pip install -r requirements.txt --user --upgrade
+        python3 -m pip install -r requirements.txt --user --upgrade
         
         # Update Streamlit dependencies
         echo "🔧 Updating Streamlit dependencies..."  
         cd ../streamlit
-        python3.11 -m pip install -r requirements.txt --user --upgrade
+        python3 -m pip install -r requirements.txt --user --upgrade
         
         # Go back to root
         cd ..
+        
+        # Setup systemd services
+        echo "⚙️ Setting up systemd services..."
+        sudo cp finbert-api.service /etc/systemd/system/
+        sudo cp finbert-streamlit.service /etc/systemd/system/
+        sudo systemctl daemon-reload
         
         # Start services
         echo "▶️ Starting services..."
