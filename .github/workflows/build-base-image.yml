@@ -65,7 +65,16 @@ jobs:
         docker push $REGISTRY/$BASE_IMAGE_NAME:$GITHUB_REF_NAME
         docker push $REGISTRY/$BASE_IMAGE_NAME:latest
 
-    - name: 📝 Summary
+    - name: � Make container package public
+      run: |
+        # Make the base image package public for ECS access
+        gh api --method PATCH /user/packages/container/rag_api_ui%2Ffinbert-base \
+          --field visibility=public || \
+        echo "⚠️ Package might already be public or permissions may be needed"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: �📝 Summary
       run: |
         echo "## 🎯 Base Image Built Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY

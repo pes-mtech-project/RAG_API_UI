@@ -94,6 +94,15 @@ jobs:
         labels: ${{ steps.meta-api.outputs.labels }}
         cache-from: type=gha
 
+    - name: 🔓 Make container package public
+      run: |
+        # Make the API image package public for ECS access
+        gh api --method PATCH /user/packages/container/rag_api_ui%2Ffinbert-api \
+          --field visibility=public || \
+        echo "⚠️ Package might already be public or permissions may be needed"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   deploy:
     needs: [detect-changes, build-and-push]
     runs-on: ubuntu-latest
