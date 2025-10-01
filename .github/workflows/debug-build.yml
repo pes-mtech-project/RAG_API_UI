@@ -2,6 +2,10 @@ name: Debug - Docker Build Test
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ develop ]
+    paths:
+      - '.github/workflows/debug-build.yml'
 
 env:
   REGISTRY: ghcr.io
