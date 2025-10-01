@@ -239,6 +239,12 @@ jobs:
         # Make script executable
         chmod +x deploy.sh
         
+        # Fix SSH key permissions (GitHub Actions creates files with 0644 by default)
+        chmod 600 finbert-rag-key-new.pem
+        
+        # Verify key permissions
+        ls -la finbert-rag-key-new.pem
+        
         # Copy deployment script to EC2 and execute
         scp -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no deploy.sh ec2-user@${{ steps.ec2-info.outputs.INSTANCE_IP }}:/tmp/
         ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ec2-user@${{ steps.ec2-info.outputs.INSTANCE_IP }} 'bash /tmp/deploy.sh'
