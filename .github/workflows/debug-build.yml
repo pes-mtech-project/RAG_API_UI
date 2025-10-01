@@ -1,0 +1,46 @@
+name: Debug - Docker Build Test
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-api
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  debug-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔍 Debug - List files
+      run: |
+        echo "Current directory:"
+        pwd
+        echo "Files in root:"
+        ls -la
+        echo "Files in api directory:"
+        ls -la api/ || echo "No api directory"
+        echo "Files in docker directory:"  
+        ls -la docker/ || echo "No docker directory"
+        echo "Contents of Dockerfile.api:"
+        cat docker/Dockerfile.api || echo "No Dockerfile.api"
+
+    - name: 🔐 Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🏗️ Test Docker build
+      run: |
+        echo "Testing Docker build..."
+        docker build -f docker/Dockerfile.api -t test-api .
+        echo "Build successful!"
