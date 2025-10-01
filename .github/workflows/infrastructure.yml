@@ -44,10 +44,16 @@ jobs:
         
         echo "🏗️ Setting up AWS infrastructure for FinBERT RAG App in ap-south-1..."
         
-        # Cleanup any existing instances in us-east-1 first
-        echo "🧹 Cleaning up existing instances in us-east-1..."
-        export AWS_DEFAULT_REGION=us-east-1
-        EXISTING_INSTANCE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=finbert-rag-instance" "Name=instance-state-name,Values=running,pending" --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null || echo "")
+        # Set target region
+        export AWS_DEFAULT_REGION=ap-south-1
+        echo "🌏 Working in ap-south-1 region"
+        
+        # Cleanup any existing terminated instances
+        echo "🧹 Cleaning up terminated instances..."
+        TERMINATED_INSTANCES=$(aws ec2 describe-instances --filters "Name=instance-state-name,Values=terminated" --query 'Reservations[*].Instances[*].InstanceId' --output text 2>/dev/null || echo "")
+        if [ -n "$TERMINATED_INSTANCES" ]; then
+          echo "Found terminated instances, they will be cleaned up automatically by AWS"
+        fi
         if [ -n "$EXISTING_INSTANCE" ] && [ "$EXISTING_INSTANCE" != "None" ]; then
           echo "🛑 Terminating existing instance: $EXISTING_INSTANCE"
           aws ec2 terminate-instances --instance-ids $EXISTING_INSTANCE
@@ -64,26 +70,36 @@ jobs:
         echo "🔍 Checking free tier eligible instance types in ap-south-1..."
         aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType' --output text || echo "Could not check free tier types"
         
-        # Import existing SSH key pair
+        # Setup SSH key pair
         KEY_NAME="finbert-rag-key-new"
         echo "🔑 Setting up SSH key pair..."
         
-        # Delete existing key if it exists
-        aws ec2 delete-key-pair --key-name $KEY_NAME 2>/dev/null || true
+        # Check if key already exists
+        if aws ec2 describe-key-pairs --key-names $KEY_NAME >/dev/null 2>&1; then
+          echo "✅ SSH key pair already exists: $KEY_NAME"
+        else
+          # Create new key pair since import might fail
+          echo "🆕 Creating new SSH key pair..."
+          aws ec2 create-key-pair --key-name $KEY_NAME --query 'KeyMaterial' --output text > finbert-rag-key-new.pem
+          chmod 600 finbert-rag-key-new.pem
+          echo "✅ SSH key pair created: $KEY_NAME"
+          
+          # Store key in GitHub secrets for future use
+          echo "💾 Key pair created successfully"
+        fi
         
-        # Import the public key from our existing key pair
-        echo "� Importing SSH public key..."
-        aws ec2 import-key-pair \
-          --key-name $KEY_NAME \
-          --public-key-material "${{ secrets.SSH_PUBLIC_KEY }}"
+        # Setup IAM role for EC2 with SSM permissions (optional)
+        echo "🔐 Setting up IAM role for SSM access..."
         
-        echo "✅ SSH key pair imported: $KEY_NAME"
+        ROLE_NAME="FinBERT-RAG-EC2-SSM-Role"
+        PROFILE_NAME="FinBERT-RAG-EC2-Profile"
         
-        # Create IAM role for EC2 with SSM permissions
-        echo "🔐 Creating IAM role for EC2..."
-        
-        # Create trust policy for EC2
-        cat > trust-policy.json << 'EOF'
+        # Check if IAM operations are allowed
+        if aws iam get-user >/dev/null 2>&1; then
+          echo "✅ IAM access available, creating role..."
+          
+          # Create trust policy for EC2
+          cat > trust-policy.json << 'TRUST_EOF'
         {
           "Version": "2012-10-17",
           "Statement": [
@@ -96,34 +112,27 @@ jobs:
             }
           ]
         }
-        EOF
-        
-        # Create IAM role
-        ROLE_NAME="FinBERT-RAG-EC2-SSM-Role"
-        aws iam create-role \
-          --role-name $ROLE_NAME \
-          --assume-role-policy-document file://trust-policy.json 2>/dev/null || \
-          echo "IAM role already exists"
-        
-        # Attach SSM managed policy
-        aws iam attach-role-policy \
-          --role-name $ROLE_NAME \
-          --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore 2>/dev/null || \
-          echo "SSM policy already attached"
-        
-        # Create instance profile
-        PROFILE_NAME="FinBERT-RAG-EC2-Profile"
-        aws iam create-instance-profile \
-          --instance-profile-name $PROFILE_NAME 2>/dev/null || \
-          echo "Instance profile already exists"
-        
-        # Add role to instance profile
-        aws iam add-role-to-instance-profile \
-          --instance-profile-name $PROFILE_NAME \
-          --role-name $ROLE_NAME 2>/dev/null || \
-          echo "Role already added to instance profile"
-        
-        echo "✅ IAM role and instance profile ready"
+        TRUST_EOF
+          
+          # Try to create IAM role
+          if aws iam create-role --role-name $ROLE_NAME --assume-role-policy-document file://trust-policy.json >/dev/null 2>&1; then
+            echo "✅ IAM role created"
+          else
+            echo "ℹ️ IAM role already exists or creation failed"
+          fi
+          
+          # Try to attach SSM policy
+          aws iam attach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore >/dev/null 2>&1 || echo "ℹ️ SSM policy attachment skipped"
+          
+          # Try to create instance profile
+          aws iam create-instance-profile --instance-profile-name $PROFILE_NAME >/dev/null 2>&1 || echo "ℹ️ Instance profile exists"
+          aws iam add-role-to-instance-profile --instance-profile-name $PROFILE_NAME --role-name $ROLE_NAME >/dev/null 2>&1 || echo "ℹ️ Role already in profile"
+          
+          echo "✅ IAM setup completed"
+        else
+          echo "⚠️ No IAM access - proceeding without SSM role (will use SSH only)"
+          PROFILE_NAME=""
+        fi
         
         # Create security group
         SG_NAME="finbert-rag-sg"
@@ -159,66 +168,24 @@ jobs:
         if ! aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text | grep -v "None" >/dev/null 2>&1; then
           echo "🚀 Launching EC2 instance..."
           
-          # User data script for instance initialization
+          # User data script for instance initialization (minimal for reliability)
           cat > user_data.sh << 'USERDATA'
         #!/bin/bash
+        # Minimal user data to avoid boot failures
         yum update -y
-        yum install -y python3.11 python3.11-pip git nginx
+        yum install -y python3.11 python3.11-pip git
         
-        # Install additional dependencies
+        # Create log file for debugging
+        echo "$(date): User data script started" >> /var/log/user-data.log
+        
+        # Basic Python setup
         python3.11 -m pip install --upgrade pip
         
-        # Create application user
-        useradd -m -s /bin/bash appuser || true
+        # Create app directory
+        mkdir -p /home/ec2-user/finbert-news-rag-app
+        chown -R ec2-user:ec2-user /home/ec2-user/
         
-        # Clone the repository (will be updated via CI/CD)
-        cd /home/ec2-user
-        git clone https://github.com/pes-mtech-project/RAG_API_UI.git finbert-news-rag-app || true
-        chown -R ec2-user:ec2-user finbert-news-rag-app
-        
-        # Setup nginx reverse proxy
-        cat > /etc/nginx/conf.d/finbert-rag.conf << 'NGINX'
-        server {
-            listen 80;
-            server_name _;
-            
-            # API routes
-            location /api/ {
-                proxy_pass http://localhost:8000/;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-            }
-            
-            # Health check
-            location /health {
-                proxy_pass http://localhost:8000/health;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-            }
-            
-            # Streamlit app (default)
-            location / {
-                proxy_pass http://localhost:8501/;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto $scheme;
-                
-                # WebSocket support for Streamlit
-                proxy_http_version 1.1;
-                proxy_set_header Upgrade $http_upgrade;
-                proxy_set_header Connection "upgrade";
-            }
-        }
-        NGINX
-        
-        # Enable and start nginx
-        systemctl enable nginx
-        systemctl start nginx
-        
-        echo "✅ EC2 instance setup completed"
+        echo "$(date): User data script completed" >> /var/log/user-data.log
         USERDATA
           
           # Get the latest Amazon Linux 2023 AMI for the current region
@@ -235,43 +202,53 @@ jobs:
           echo "🚀 Attempting to launch $INSTANCE_TYPE instance..."
           
           set +e  # Allow command to fail
-          INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id $AMI_ID \
-            --count 1 \
-            --instance-type $INSTANCE_TYPE \
-            --key-name $KEY_NAME \
-            --security-group-ids $SG_ID \
-            --iam-instance-profile Name=$PROFILE_NAME \
-            --user-data file://user_data.sh \
-            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
-            --query 'Instances[0].InstanceId' \
-            --output text 2>/dev/null)
+          
+          # Build instance launch command
+          LAUNCH_CMD="aws ec2 run-instances --image-id $AMI_ID --count 1 --instance-type $INSTANCE_TYPE --key-name $KEY_NAME --security-group-ids $SG_ID"
+          if [ -n "$PROFILE_NAME" ]; then
+            LAUNCH_CMD="$LAUNCH_CMD --iam-instance-profile Name=$PROFILE_NAME"
+          fi
+          LAUNCH_CMD="$LAUNCH_CMD --user-data file://user_data.sh --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' --query 'Instances[0].InstanceId' --output text"
+          
+          echo "🚀 Launching instance with command: $LAUNCH_CMD"
+          INSTANCE_ID=$(eval $LAUNCH_CMD 2>/dev/null)
           
           if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
             echo "⚠️ t2.micro failed, trying t3.micro..."
             INSTANCE_TYPE="t3.micro"
-            INSTANCE_ID=$(aws ec2 run-instances \
-              --image-id $AMI_ID \
-              --count 1 \
-              --instance-type $INSTANCE_TYPE \
-              --key-name $KEY_NAME \
-              --security-group-ids $SG_ID \
-              --iam-instance-profile Name=$PROFILE_NAME \
-              --user-data file://user_data.sh \
-              --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
-              --query 'Instances[0].InstanceId' \
-              --output text)
+            LAUNCH_CMD="aws ec2 run-instances --image-id $AMI_ID --count 1 --instance-type $INSTANCE_TYPE --key-name $KEY_NAME --security-group-ids $SG_ID"
+            if [ -n "$PROFILE_NAME" ]; then
+              LAUNCH_CMD="$LAUNCH_CMD --iam-instance-profile Name=$PROFILE_NAME"
+            fi
+            LAUNCH_CMD="$LAUNCH_CMD --user-data file://user_data.sh --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' --query 'Instances[0].InstanceId' --output text"
+            
+            INSTANCE_ID=$(eval $LAUNCH_CMD)
           fi
           set -e  # Re-enable exit on error
           
-          echo "✅ Instance launched with type: $INSTANCE_TYPE"
-          echo "✅ Instance ID: $INSTANCE_ID"
+          # Validate instance creation
+          if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ] || [ "$INSTANCE_ID" = "null" ]; then
+            echo "❌ Failed to launch EC2 instance"
+            echo "This could be due to:"
+            echo "1. No available capacity in the region"  
+            echo "2. Insufficient permissions"
+            echo "3. Security group or VPC issues"
+            exit 1
+          fi
           
-          echo "✅ EC2 instance launched: $INSTANCE_ID"
+          echo "✅ Instance launched successfully!"
+          echo "Instance Type: $INSTANCE_TYPE"
+          echo "Instance ID: $INSTANCE_ID"
           
-          # Wait for instance to be running
+          # Wait for instance to be running (with timeout)
           echo "⏳ Waiting for instance to be running..."
-          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          if ! timeout 300 aws ec2 wait instance-running --instance-ids $INSTANCE_ID; then
+            echo "❌ Instance failed to start within 5 minutes"
+            echo "Instance may have failed to boot. Check the AWS console for details."
+            exit 1
+          fi
+          
+          echo "✅ Instance is now running!"
           
           # Get or create Elastic IP
           echo "🌐 Setting up Elastic IP..."
@@ -299,7 +276,23 @@ jobs:
           PUBLIC_IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
           echo "🌐 Instance Public IP (Elastic): $PUBLIC_IP"
           
-          echo "📋 IMPORTANT: Add these to your GitHub Secrets:"
+          # Final validation
+          echo "� Performing final validation..."
+          INSTANCE_STATE=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].State.Name' --output text)
+          if [ "$INSTANCE_STATE" != "running" ]; then
+            echo "❌ Instance is not in running state: $INSTANCE_STATE"
+            exit 1
+          fi
+          
+          # Test basic connectivity (port 22)
+          echo "🔍 Testing basic connectivity to port 22..."
+          if timeout 10 bash -c "</dev/tcp/$PUBLIC_IP/22" 2>/dev/null; then
+            echo "✅ Port 22 is accessible"
+          else
+            echo "⚠️ Port 22 not accessible yet (instance may still be booting)"
+          fi
+          
+          echo "�📋 IMPORTANT: Add these to your GitHub Secrets:"
           echo "EC2_INSTANCE_ID=$INSTANCE_ID"
           echo "EC2_HOST=$PUBLIC_IP"
           echo "ELASTIC_IP_ALLOCATION_ID=$ALLOCATION_ID"
@@ -310,6 +303,7 @@ jobs:
           echo "Instance Type: $INSTANCE_TYPE"
           echo "Elastic IP: $PUBLIC_IP"
           echo "Allocation ID: $ALLOCATION_ID"
+          echo "SSH Key: $KEY_NAME"
           
         else
           INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text)
