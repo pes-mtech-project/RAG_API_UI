@@ -1,0 +1,188 @@
+name: ECS - Container Build & Deploy
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  API_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-api
+  AWS_REGION: ap-south-1
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔐 Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🏷️ Extract metadata for API
+      id: meta-api
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: 🏗️ Build and push API Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.api
+        push: true
+        tags: ${{ steps.meta-api.outputs.tags }}
+        labels: ${{ steps.meta-api.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🎯 Determine environment
+      id: environment
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "env=prod" >> $GITHUB_OUTPUT
+          echo "stack_name=FinBertRagProdStack" >> $GITHUB_OUTPUT
+          echo "image_tag=latest" >> $GITHUB_OUTPUT
+        else
+          echo "env=dev" >> $GITHUB_OUTPUT
+          echo "stack_name=FinBertRagDevStack" >> $GITHUB_OUTPUT
+          echo "image_tag=develop" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: infrastructure/package-lock.json
+
+    - name: 📦 Install CDK dependencies
+      working-directory: ./infrastructure
+      run: npm ci
+
+    - name: 🚀 Deploy infrastructure with CDK
+      working-directory: ./infrastructure
+      run: |
+        # Bootstrap CDK if needed (idempotent)
+        export CDK_DEFAULT_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
+        export CDK_DEFAULT_REGION=${{ env.AWS_REGION }}
+        npx cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+        
+        # Deploy the stack
+        npx cdk deploy ${{ steps.environment.outputs.stack_name }} \
+          --require-approval never \
+          --outputs-file cdk-outputs.json
+
+    - name: 🔄 Update ECS service with new image
+      run: |
+        # Get stack outputs
+        CLUSTER_NAME=$(aws cloudformation describe-stacks \
+          --stack-name ${{ steps.environment.outputs.stack_name }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`ClusterName`].OutputValue' \
+          --output text)
+        
+        SERVICE_NAME=$(aws cloudformation describe-stacks \
+          --stack-name ${{ steps.environment.outputs.stack_name }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`ServiceName`].OutputValue' \
+          --output text)
+
+        echo "📊 Cluster: $CLUSTER_NAME"
+        echo "📊 Service: $SERVICE_NAME"
+        
+        # Force new deployment with updated image
+        aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service $SERVICE_NAME \
+          --force-new-deployment \
+          --no-cli-pager
+
+        echo "⏳ Waiting for service to stabilize..."
+        aws ecs wait services-stable \
+          --cluster $CLUSTER_NAME \
+          --services $SERVICE_NAME
+
+    - name: 🔍 Health check deployment
+      run: |
+        # Get load balancer DNS from stack outputs
+        ALB_DNS=$(aws cloudformation describe-stacks \
+          --stack-name ${{ steps.environment.outputs.stack_name }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+          --output text)
+        
+        API_URL="http://$ALB_DNS"
+        echo "🌐 API URL: $API_URL"
+        
+        # Wait for ALB to be ready and perform health check
+        for i in {1..30}; do
+          if curl -f -s "$API_URL/health" > /dev/null 2>&1; then
+            echo "✅ API health check passed"
+            HEALTH_RESPONSE=$(curl -s "$API_URL/health")
+            echo "📊 Health response: $HEALTH_RESPONSE"
+            break
+          fi
+          echo "⏳ Waiting for API to be ready... (attempt $i/30)"
+          sleep 10
+        done
+
+    - name: 🎉 Deployment Summary
+      run: |
+        ALB_DNS=$(aws cloudformation describe-stacks \
+          --stack-name ${{ steps.environment.outputs.stack_name }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+          --output text)
+        
+        API_URL="http://$ALB_DNS"
+        
+        echo "## 🚀 ECS Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ steps.environment.outputs.env }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Stack:** ${{ steps.environment.outputs.stack_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image Tag:** ${{ steps.environment.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Application URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **API:** $API_URL" >> $GITHUB_STEP_SUMMARY
+        echo "- **API Docs:** $API_URL/docs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Health Check:** $API_URL/health" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Container Image" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image:** \`${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ steps.environment.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🏗️ Infrastructure" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployment Type:** AWS ECS Fargate" >> $GITHUB_STEP_SUMMARY
+        echo "- **Load Balancer:** Application Load Balancer" >> $GITHUB_STEP_SUMMARY
+        echo "- **Auto Scaling:** Enabled (CPU/Memory based)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Health Checks:** Automated with auto-recovery" >> $GITHUB_STEP_SUMMARY
