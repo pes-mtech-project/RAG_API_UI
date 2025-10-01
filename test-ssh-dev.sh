@@ -61,14 +61,14 @@ ssh -i "$KEY_FILE" \
     -o ConnectTimeout=10 \
     -o StrictHostKeyChecking=no \
     -o UserKnownHostsFile=/dev/null \
-    ec2-user@$ELASTIC_IP \
+    ubuntu@$ELASTIC_IP \
     "echo '✅ SSH connection successful to DEVELOPMENT instance!' && whoami && uptime && echo '🚧 Environment: Development (Branch: develop)'"
 
 if [ $? -eq 0 ]; then
     echo ""
     echo "✅ Development SSH test completed successfully!"
     echo "You can now connect using:"
-    echo "ssh -i $KEY_FILE ec2-user@$ELASTIC_IP"
+    echo "ssh -i $KEY_FILE ubuntu@$ELASTIC_IP"
     
     # Show development instance details if we auto-detected
     if [ -z "$1" ]; then

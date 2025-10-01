@@ -101,7 +101,7 @@ aws ec2 describe-instance-status \
 # Check if we can SSH to get container status
 echo ""
 echo "🐳 Development Container Status:"
-if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ec2-user@$IP_ADDRESS "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null; then
+if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@$IP_ADDRESS "docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'" 2>/dev/null; then
     echo ""
 else
     echo "❌ Could not connect via SSH to check containers"

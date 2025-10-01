@@ -145,7 +145,7 @@ jobs:
         
         # Wait for SSH to be ready
         for i in {1..30}; do
-          if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP "echo 'SSH ready'" 2>/dev/null; then
+          if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP "echo 'SSH ready'" 2>/dev/null; then
             echo "✅ SSH connection established"
             break
           fi
@@ -154,7 +154,7 @@ jobs:
         done
 
         # Create development docker-compose file
-        ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+        ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
           # Stop existing containers
           docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
           

@@ -71,7 +71,7 @@ echo ""
 echo "🔍 Testing SSH connectivity..."
 sleep 60  # Give more time for SSH to start
 
-if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=10 -o StrictHostKeyChecking=no ec2-user@$NEW_IP "echo 'Development SSH working'" 2>/dev/null; then
+if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=10 -o StrictHostKeyChecking=no ubuntu@$NEW_IP "echo 'Development SSH working'" 2>/dev/null; then
     echo "✅ Development SSH is working!"
 else
     echo "❌ Development SSH still not working - may need manual intervention"
