@@ -93,7 +93,35 @@ jobs:
       working-directory: ./infrastructure
       run: npm ci
 
-    - name: 🚀 Deploy infrastructure with CDK
+    - name: � Check and handle stuck CloudFormation stacks
+      run: |
+        STACK_NAME="${{ steps.environment.outputs.stack_name }}"
+        echo "Checking stack status for: $STACK_NAME"
+        
+        # Check if stack exists and its status
+        STACK_STATUS=$(aws cloudformation describe-stacks \
+          --stack-name $STACK_NAME \
+          --query 'Stacks[0].StackStatus' \
+          --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+        
+        echo "Current stack status: $STACK_STATUS"
+        
+        if [ "$STACK_STATUS" = "CREATE_IN_PROGRESS" ] || [ "$STACK_STATUS" = "UPDATE_IN_PROGRESS" ]; then
+          echo "⚠️  Stack is in progress state. Waiting up to 10 minutes for completion..."
+          
+          # Wait for stack to complete or timeout after 10 minutes
+          aws cloudformation wait stack-create-complete \
+            --stack-name $STACK_NAME \
+            --cli-read-timeout 600 \
+            --cli-connect-timeout 60 || \
+          aws cloudformation wait stack-update-complete \
+            --stack-name $STACK_NAME \
+            --cli-read-timeout 600 \
+            --cli-connect-timeout 60 || \
+          echo "⏰ Stack operation timed out or failed"
+        fi
+
+    - name: �🚀 Deploy infrastructure with CDK
       working-directory: ./infrastructure
       run: |
         # Bootstrap CDK if needed (idempotent)
@@ -101,10 +129,30 @@ jobs:
         export CDK_DEFAULT_REGION=${{ env.AWS_REGION }}
         npx cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
         
-        # Deploy the stack
-        npx cdk deploy ${{ steps.environment.outputs.stack_name }} \
-          --require-approval never \
-          --outputs-file cdk-outputs.json
+        # Deploy the stack with retry logic
+        STACK_NAME="${{ steps.environment.outputs.stack_name }}"
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          echo "🚀 Deployment attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+          
+          if npx cdk deploy $STACK_NAME \
+            --require-approval never \
+            --outputs-file cdk-outputs.json; then
+            echo "✅ Deployment successful!"
+            break
+          else
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "❌ Deployment failed. Waiting 30 seconds before retry..."
+              sleep 30
+            else
+              echo "❌ All deployment attempts failed."
+              exit 1
+            fi
+          fi
+        done
 
     - name: 🔄 Update ECS service with new image
       run: |
