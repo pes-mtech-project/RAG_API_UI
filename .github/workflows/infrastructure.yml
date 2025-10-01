@@ -360,26 +360,109 @@ jobs:
       if: ${{ inputs.destroy }}
       run: |
         echo "🧹 Destroying AWS infrastructure..."
+        export AWS_DEFAULT_REGION=ap-south-1
         
-        # Get instance ID
-        INSTANCE_NAME="finbert-rag-instance"
-        INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" --query 'Reservations[0].Instances[0].InstanceId' --output text)
+        # Step 1: Find and terminate all instances
+        echo "🔍 Finding instances to terminate..."
+        INSTANCE_IDS=$(aws ec2 describe-instances \
+          --filters "Name=instance-state-name,Values=running,pending,stopping,stopped" \
+          --query 'Reservations[].Instances[].[InstanceId,Tags[?Key==`Name`].Value|[0]]' \
+          --output text | grep -E "(finbert-rag|infrastructure-test)" | awk '{print $1}' || echo "")
         
-        if [ "$INSTANCE_ID" != "None" ] && [ -n "$INSTANCE_ID" ]; then
-          echo "🛑 Terminating EC2 instance: $INSTANCE_ID"
-          aws ec2 terminate-instances --instance-ids $INSTANCE_ID
-          aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID
-          echo "✅ Instance terminated"
+        if [ -n "$INSTANCE_IDS" ]; then
+          echo "🛑 Terminating instances: $INSTANCE_IDS"
+          for INSTANCE_ID in $INSTANCE_IDS; do
+            echo "Terminating: $INSTANCE_ID"
+            aws ec2 terminate-instances --instance-ids $INSTANCE_ID >/dev/null 2>&1 || echo "Failed to terminate $INSTANCE_ID"
+          done
+          
+          echo "⏳ Waiting for all instances to terminate..."
+          for INSTANCE_ID in $INSTANCE_IDS; do
+            echo "Waiting for $INSTANCE_ID..."
+            timeout 300 aws ec2 wait instance-terminated --instance-ids $INSTANCE_ID || echo "Timeout waiting for $INSTANCE_ID"
+          done
+          echo "✅ All instances terminated"
+        else
+          echo "ℹ️ No instances found to terminate"
         fi
         
-        # Clean up security group
+        # Step 2: Wait extra time for network interfaces to detach
+        echo "⏳ Waiting 30 seconds for network interfaces to fully detach..."
+        sleep 30
+        
+        # Step 3: Check for and clean up network interfaces
         SG_NAME="finbert-rag-sg"
         SG_ID=$(aws ec2 describe-security-groups --filters "Name=group-name,Values=$SG_NAME" --query 'SecurityGroups[0].GroupId' --output text 2>/dev/null || echo "")
+        
         if [ -n "$SG_ID" ] && [ "$SG_ID" != "None" ]; then
-          echo "🛡️ Deleting security group: $SG_ID"
-          aws ec2 delete-security-group --group-id $SG_ID
-          echo "✅ Security group deleted"
+          echo "� Checking for dependent network interfaces..."
+          DEPENDENT_ENIS=$(aws ec2 describe-network-interfaces --filters "Name=group-id,Values=$SG_ID" --query 'NetworkInterfaces[].NetworkInterfaceId' --output text 2>/dev/null || echo "")
+          
+          if [ -n "$DEPENDENT_ENIS" ]; then
+            echo "🔧 Found dependent network interfaces: $DEPENDENT_ENIS"
+            for ENI in $DEPENDENT_ENIS; do
+              echo "Checking ENI: $ENI"
+              ENI_STATUS=$(aws ec2 describe-network-interfaces --network-interface-ids $ENI --query 'NetworkInterfaces[0].Status' --output text 2>/dev/null || echo "")
+              if [ "$ENI_STATUS" = "available" ]; then
+                echo "Deleting available ENI: $ENI"
+                aws ec2 delete-network-interface --network-interface-id $ENI 2>/dev/null || echo "Failed to delete ENI $ENI"
+              else
+                echo "ENI $ENI is $ENI_STATUS, waiting..."
+              fi
+            done
+            
+            echo "⏳ Waiting additional 30 seconds for ENI cleanup..."
+            sleep 30
+          fi
+          
+          # Step 4: Try to delete security group with retries
+          echo "🛡️ Attempting to delete security group: $SG_ID"
+          RETRY_COUNT=0
+          MAX_RETRIES=5
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            if aws ec2 delete-security-group --group-id $SG_ID 2>/dev/null; then
+              echo "✅ Security group deleted successfully"
+              break
+            else
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              echo "⚠️ Attempt $RETRY_COUNT failed, retrying in 30 seconds..."
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                sleep 30
+              fi
+            fi
+          done
+          
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "❌ Failed to delete security group after $MAX_RETRIES attempts"
+            echo "Manual cleanup may be required in AWS console"
+            echo "Security Group ID: $SG_ID"
+          fi
+        else
+          echo "ℹ️ Security group not found or already deleted"
         fi
         
-        # Note: Key pair is kept for reuse
-        echo "🎉 Infrastructure cleanup completed!"
+        # Step 5: Clean up IAM resources (optional)
+        echo "🔐 Cleaning up IAM resources..."
+        ROLE_NAME="FinBERT-RAG-EC2-SSM-Role"
+        PROFILE_NAME="FinBERT-RAG-EC2-Profile"
+        
+        # Remove role from instance profile
+        aws iam remove-role-from-instance-profile --instance-profile-name $PROFILE_NAME --role-name $ROLE_NAME 2>/dev/null || echo "ℹ️ Role not in instance profile"
+        
+        # Delete instance profile
+        aws iam delete-instance-profile --instance-profile-name $PROFILE_NAME 2>/dev/null || echo "ℹ️ Instance profile not found"
+        
+        # Detach policies and delete role
+        aws iam detach-role-policy --role-name $ROLE_NAME --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore 2>/dev/null || echo "ℹ️ Policy not attached"
+        aws iam delete-role --role-name $ROLE_NAME 2>/dev/null || echo "ℹ️ IAM role not found"
+        
+        echo "✅ IAM cleanup completed"
+        
+        # Note: Elastic IP and Key pairs are preserved for reuse
+        echo ""
+        echo "🎉 Infrastructure destruction completed!"
+        echo "📋 Preserved resources:"
+        echo "- Elastic IP (for reuse)"
+        echo "- SSH Key Pairs (for reuse)"
+        echo "- VPC and default resources"
