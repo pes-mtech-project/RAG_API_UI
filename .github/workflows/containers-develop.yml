@@ -101,14 +101,13 @@ jobs:
           echo "❌ Development instance not found or not running"
           echo "Creating development instance..."
           
-          # Create development instance with different name tag
+          # Create development instance with same AMI as production
           INSTANCE_ID=$(aws ec2 run-instances \
-            --image-id ami-0c2af51e265bd5e0e \
+            --image-id ami-01e92b94a01430978 \
             --instance-type t3.micro \
             --key-name finbert-rag-key-new \
             --security-group-ids sg-0f464c8b21ddae0d2 \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=finbert-rag-dev-instance},{Key=Environment,Value=development},{Key=Branch,Value=develop}]' \
-            --user-data file://scripts/user-data-dev.sh \
             --query 'Instances[0].InstanceId' \
             --output text)
           
@@ -130,99 +129,121 @@ jobs:
         echo "instance-ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
         echo "🌐 Development instance IP: $INSTANCE_IP"
 
-    - name: 📦 Deploy to development instance
-      env:
-        INSTANCE_IP: ${{ steps.find-instance.outputs.instance-ip }}
-        INSTANCE_ID: ${{ steps.find-instance.outputs.instance-id }}
+    - name: � Deploy to development instance
       run: |
-        echo "🚀 Deploying to development instance: $INSTANCE_IP"
+        # Create deployment script (API only for development)
+        cat > deploy-dev.sh << 'EOF'
+        #!/bin/bash
+        set -e
         
-        # Fix SSH key permissions
-        chmod 600 finbert-rag-key-new.pem
+        echo "🚀 Starting development deployment on EC2..."
         
-        # Wait for SSH to be ready
-        for i in {1..30}; do
-          if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP "echo 'SSH ready'" 2>/dev/null; then
-            echo "✅ SSH connection established"
-            break
-          fi
-          echo "⏳ Waiting for SSH... (attempt $i/30)"
-          sleep 10
-        done
-
-        # Create development docker-compose file with API only
-        ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
-          # Stop existing containers
-          docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
-          
-          # Create development docker-compose file with API service only
-          cat > docker-compose.dev.yml << 'COMPOSE_EOF'
+        # Install Docker if not present
+        if ! command -v docker &> /dev/null; then
+            echo "📦 Installing Docker..."
+            sudo yum update -y
+            sudo yum install -y docker
+            sudo systemctl start docker
+            sudo systemctl enable docker
+            sudo usermod -a -G docker ec2-user
+        fi
+        
+        # Install Docker Compose if not present
+        if ! command -v docker-compose &> /dev/null; then
+            echo "📦 Installing Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+        fi
+        
+        # Create app directory
+        sudo mkdir -p /opt/finbert-app-dev
+        sudo chown ec2-user:ec2-user /opt/finbert-app-dev
+        cd /opt/finbert-app-dev
+        
+        # Login to GitHub Container Registry
+        echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        
+        # Pull latest development API image
+        echo "📥 Pulling latest development API image..."
+        docker pull ghcr.io/${{ env.API_IMAGE_NAME }}:dev
+        
+        # Create development docker-compose.yml (API only)
+        cat > docker-compose.dev.yml << 'COMPOSE_EOF'
         version: '3.8'
-
+        
         services:
           finbert-api-dev:
-            image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:dev
+            image: ghcr.io/${{ env.API_IMAGE_NAME }}:dev
             container_name: finbert-api-dev
             ports:
-              - "8010:8000"  # Development API port
+              - "8010:8000"  # Development API on port 8010
             environment:
-              - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-https://34.131.79.115}
-              - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
-              - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
-              - ELASTICSEARCH_USE_SSL=${ELASTICSEARCH_USE_SSL:-true}
+              - API_HOST=0.0.0.0
+              - API_PORT=8000
+            networks:
+              - finbert-network-dev
             restart: unless-stopped
             healthcheck:
               test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
               interval: 30s
               timeout: 10s
               retries: 3
-        COMPOSE_EOF
-
-          # Pull latest development images
-          docker pull ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:dev
-          docker pull ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:dev
-          
-          # Start development services
-          docker-compose -f docker-compose.dev.yml up -d
-          
-          # Wait for services to be healthy
-          sleep 30
-          
-          echo "✅ Development deployment completed"
-          docker ps
-        EOF
-
-    - name: 🔍 Health check development deployment
-      env:
-        INSTANCE_IP: ${{ steps.find-instance.outputs.instance-ip }}
-      run: |
-        echo "🏥 Performing health checks..."
+              start_period: 40s
         
-        # Wait a bit more for services to stabilize
+        networks:
+          finbert-network-dev:
+            driver: bridge
+        COMPOSE_EOF
+        
+        # Stop existing containers
+        echo "🛑 Stopping existing containers..."
+        docker-compose -f docker-compose.dev.yml down || true
+        
+        # Start new containers
+        echo "🚀 Starting development API container..."
+        docker-compose -f docker-compose.dev.yml up -d
+        
+        # Wait for services to be healthy
+        echo "⏳ Waiting for API service to be healthy..."
         sleep 30
         
-        # Check API health
-        for i in {1..10}; do
-          if curl -f http://$INSTANCE_IP:8010/health 2>/dev/null; then
-            echo "✅ Development API is healthy"
-            break
-          fi
-          echo "⏳ Waiting for API health... (attempt $i/10)"
-          sleep 10
-        done
+        # Health check
+        echo "🔍 Performing health checks..."
+        if curl -f http://localhost:8010/health; then
+            echo "✅ Development API service is healthy"
+        else
+            echo "❌ Development API service health check failed"
+            docker-compose -f docker-compose.dev.yml logs finbert-api-dev
+            exit 1
+        fi
         
-        # Check UI availability
-        for i in {1..10}; do
-          if curl -f -s http://$INSTANCE_IP:8511 > /dev/null 2>&1; then
-            echo "✅ Development UI is accessible"
-            break
-          fi
-          echo "⏳ Waiting for UI availability... (attempt $i/10)"
-          sleep 10
-        done
+        echo "🎉 Development deployment completed successfully!"
+        echo "🌐 Development API URL: http://${{ steps.find-instance.outputs.instance-ip }}:8010"
+        EOF
         
-        echo "🎉 Development deployment successful!"
-        echo "📍 Development URLs:"
-        echo "   API: http://$INSTANCE_IP:8010"
-        echo "   UI:  http://$INSTANCE_IP:8511"
-        echo "   API Docs: http://$INSTANCE_IP:8010/docs"
+        # Make script executable
+        chmod +x deploy-dev.sh
+        
+        # Fix SSH key permissions
+        chmod 600 finbert-rag-key-new.pem
+        
+        # Copy deployment script to EC2 and execute
+        scp -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no deploy-dev.sh ec2-user@${{ steps.find-instance.outputs.instance-ip }}:/tmp/
+        ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ec2-user@${{ steps.find-instance.outputs.instance-ip }} 'bash /tmp/deploy-dev.sh'
+
+    - name: 🎉 Development Deployment Summary
+      run: |
+        echo "## 🚀 Development Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Target Instance:** ${{ steps.find-instance.outputs.instance-id }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Public IP:** ${{ steps.find-instance.outputs.instance-ip }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Development Application URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **API:** http://${{ steps.find-instance.outputs.instance-ip }}:8010" >> $GITHUB_STEP_SUMMARY
+        echo "- **API Docs:** http://${{ steps.find-instance.outputs.instance-ip }}:8010/docs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Health:** http://${{ steps.find-instance.outputs.instance-ip }}:8010/health" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### � Container Image" >> $GITHUB_STEP_SUMMARY
+        echo "- **API:** \`ghcr.io/${{ env.API_IMAGE_NAME }}:dev\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Note:** Development environment only deploys the API service. UI is excluded for faster iteration."
