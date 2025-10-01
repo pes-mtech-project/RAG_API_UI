@@ -153,12 +153,12 @@ jobs:
           sleep 10
         done
 
-        # Create development docker-compose file
+        # Create development docker-compose file with API only
         ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP << 'EOF'
           # Stop existing containers
           docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
           
-          # Create development docker-compose file
+          # Create development docker-compose file with API service only
           cat > docker-compose.dev.yml << 'COMPOSE_EOF'
         version: '3.8'
 
@@ -167,7 +167,7 @@ jobs:
             image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:dev
             container_name: finbert-api-dev
             ports:
-              - "8010:8000"  # Different port for dev
+              - "8010:8000"  # Development API port
             environment:
               - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-https://34.131.79.115}
               - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
@@ -176,22 +176,6 @@ jobs:
             restart: unless-stopped
             healthcheck:
               test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-              interval: 30s
-              timeout: 10s
-              retries: 3
-
-          finbert-ui-dev:
-            image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:dev
-            container_name: finbert-ui-dev
-            ports:
-              - "8511:8501"  # Different port for dev
-            environment:
-              - API_URL=http://finbert-api-dev:8000
-            depends_on:
-              - finbert-api-dev
-            restart: unless-stopped
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:8501"]
               interval: 30s
               timeout: 10s
               retries: 3
