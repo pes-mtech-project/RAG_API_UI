@@ -1,6 +1,6 @@
 # Optimized Dockerfile using pre-built base image for faster builds
 # Falls back to building from scratch if base image not available
-ARG BASE_IMAGE=ghcr.io/pes-mtech-project/rag_api_ui/finbert-base:develop
+ARG BASE_IMAGE=ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-base:develop
 FROM ${BASE_IMAGE}
 
 # Set working directory (should already exist in base)
