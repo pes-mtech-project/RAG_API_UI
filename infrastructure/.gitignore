@@ -1,5 +1,7 @@
-# CDK
+# CDK Output
 cdk.out/
+
+# Compiled JavaScript (keep TypeScript source)
 *.d.ts
 *.js
 *.js.map
