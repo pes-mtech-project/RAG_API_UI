@@ -53,12 +53,17 @@ A containerized Financial News Retrieval-Augmented Generation (RAG) system with 
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 
 ### Automated CI/CD
-- **Production**: Triggered on push to `main` branch
-- **Development**: Triggered on push to `develop` branch
+- **Production**: Triggered on push to `main` branch (Full stack deployment)
+- **Development**: Triggered on push to `develop` branch (API-only deployment)
 - **Build**: Docker containers with multi-stage builds
 - **Registry**: GitHub Container Registry with environment-specific tagging
 - **Deploy**: Automated deployment to tagged EC2 instances
 - **Health Checks**: Container health validation post-deployment
+
+### Deployment Architecture
+- **Production**: Full stack (API + UI) on single instance
+- **Development**: Separate containers - API on dev instance, UI runs locally/separately
+- **Benefits**: Independent scaling, isolated development, better resource utilization
 
 ## 📁 Project Structure
 
@@ -111,6 +116,23 @@ docker-compose up --build
 ```
 
 ### Development Mode
+
+#### Separate Container Deployment (Recommended for Development)
+For development, the API and UI are deployed as separate containers:
+
+```bash
+# API-only deployment (runs on development instance)
+# This is handled by GitHub Actions on the develop branch
+# API available at: http://43.204.102.6:8010
+
+# UI-only deployment (run locally or separately)
+./run-ui-separately.sh [API_HOST] [API_PORT]
+# Default: ./run-ui-separately.sh 43.204.102.6 8010
+
+# UI will be available at: http://localhost:8501
+```
+
+#### Local Development (Traditional)
 ```bash
 # API development (separate terminal)
 cd api
