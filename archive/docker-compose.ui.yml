@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  finbert-ui:
+    image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:dev
+    container_name: finbert-ui-standalone
+    ports:
+      - "8501:8501"  # Standard Streamlit port
+    environment:
+      - API_URL=${API_URL:-http://localhost:8010}  # Points to development API
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

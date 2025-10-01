@@ -1,0 +1,29 @@
+# CDK Output
+cdk.out/
+
+# Compiled JavaScript (keep TypeScript source)
+*.d.ts
+*.js
+*.js.map
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# CDK Context & Outputs
+cdk.context.json
+cdk-outputs.json
+
+# Environment files
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db

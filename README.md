@@ -1,6 +1,6 @@
 # FinBERT News RAG Application
 
-A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS EC2.
+A scalable Financial News Retrieval-Augmented Generation (RAG) system built with AWS ECS Fargate, GitHub Container Registry, and automated CI/CD pipelines.
 
 ## 🏗️ Architecture
 
@@ -10,43 +10,61 @@ A containerized Financial News Retrieval-Augmented Generation (RAG) system with 
 │   Frontend      │                 │   Backend        │                     │   (GCP Cloud)    │
 │   (Port 8501)   │                 │   (Port 8000)    │                     │   (Port 443)     │
 └─────────────────┘                 └──────────────────┘                     └──────────────────┘
-       │                                      │
-       │                                      │
-   ┌───────────┐                        ┌──────────────┐
-   │ User UI   │                        │ Embeddings   │
-   │ - Summary │                        │ Similarity   │
-   │ - Search  │                        │ Search       │
-   └───────────┘                        └──────────────┘
+       │                                      │                                      │
+       │                              ┌──────────────┐                        ┌──────────────┐
+   ┌───────────┐                      │     ALB      │                        │ Embeddings   │
+   │  AWS ECS  │                      │ Load Balancer│                        │ Similarity   │
+   │  Fargate  │                      │  Auto-Scale  │                        │ Search       │
+   └───────────┘                      └──────────────┘                        └──────────────┘
 ```
 
 ## 🐳 Containerized Services
 
 ### API Service (`finbert-api`)
-- **Base**: FastAPI with FinBERT integration
+- **Framework**: FastAPI with FinBERT integration
 - **Features**: Financial news analysis, semantic search, RAG operations
-- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:latest`
+- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-api`
 - **Port**: 8000
+- **Scaling**: Auto-scaling based on CPU/Memory usage
 
-### UI Service (`finbert-ui`)  
-- **Base**: Streamlit web application
-- **Features**: Interactive interface for document queries and visualization
-- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:latest`
-- **Port**: 8501
+### Base Image (`finbert-base`)
+- **Purpose**: Pre-built ML dependencies (torch, transformers, sentence-transformers)
+- **Container**: `ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-base`
+- **Build Time**: ~6 minutes (rebuilt weekly)
+- **Performance**: 85-90% faster API builds
 
-## 🚀 Production Deployment
+## 🚀 Deployment Environments
 
-### Live Instance
-- **URL**: http://3.109.148.242:8501 (UI) | http://3.109.148.242:8000 (API)
+### Production (main branch)
+- **Infrastructure**: AWS ECS Fargate cluster
+- **Load Balancer**: Application Load Balancer with health checks
+- **Container Tags**: `latest`
+- **Scaling**: 1-10 tasks based on demand
+- **Monitoring**: CloudWatch logs and metrics
+
+### Development (develop branch)
+- **Infrastructure**: Separate ECS cluster for testing
+- **Container Tags**: `develop`
+- **Quick Deploy**: Smart build detection (skips rebuilds for infrastructure-only changes)
+- **Testing**: Automated health checks and rollback
+
+### Infrastructure Details
 - **Region**: AWS ap-south-1 (Mumbai)
 - **Instance Type**: t3.micro
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 
 ### Automated CI/CD
-- **Trigger**: Push to `main` branch
+- **Production**: Triggered on push to `main` branch (Full stack deployment)
+- **Development**: Triggered on push to `develop` branch (API-only deployment)
 - **Build**: Docker containers with multi-stage builds
-- **Registry**: GitHub Container Registry with automatic versioning
-- **Deploy**: Automated deployment to tagged EC2 instance
+- **Registry**: GitHub Container Registry with environment-specific tagging
+- **Deploy**: Automated deployment to tagged EC2 instances
 - **Health Checks**: Container health validation post-deployment
+
+### Deployment Architecture
+- **Production**: Full stack (API + UI) on single instance
+- **Development**: Separate containers - API on dev instance, UI runs locally/separately
+- **Benefits**: Independent scaling, isolated development, better resource utilization
 
 ## 📁 Project Structure
 
@@ -99,6 +117,23 @@ docker-compose up --build
 ```
 
 ### Development Mode
+
+#### Separate Container Deployment (Recommended for Development)
+For development, the API and UI are deployed as separate containers:
+
+```bash
+# API-only deployment (runs on development instance)
+# This is handled by GitHub Actions on the develop branch
+# API available at: http://43.204.102.6:8010
+
+# UI-only deployment (run locally or separately)
+./run-ui-separately.sh [API_HOST] [API_PORT]
+# Default: ./run-ui-separately.sh 43.204.102.6 8010
+
+# UI will be available at: http://localhost:8501
+```
+
+#### Local Development (Traditional)
 ```bash
 # API development (separate terminal)
 cd api
@@ -134,27 +169,45 @@ streamlit run app.py --server.port 8501
 
 ## 🛠️ Operations & Maintenance
 
-### Monitoring
+### Production Environment
 ```bash
-# Check deployment status
+# Check production deployment status
 ./diagnose-instance.sh
 
-# Test SSH connectivity
+# Test production SSH connectivity
 ./test-ssh.sh
 
-# Monitor container health
-docker ps -a
+# Restart production instance
+./restart-instance.sh
+
+# Monitor production containers
 docker logs finbert-api
 docker logs finbert-ui
 ```
 
-### Restart & Recovery
+### Development Environment  
 ```bash
-# Restart instance and trigger redeployment
-./restart-instance.sh
+# Check development deployment status
+./diagnose-dev-instance.sh
 
-# Manual container restart on instance
+# Test development SSH connectivity
+./test-ssh-dev.sh
+
+# Restart development instance
+./restart-dev-instance.sh
+
+# Monitor development containers
+docker logs finbert-api-dev
+docker logs finbert-ui-dev
+```
+
+### Manual Container Management
+```bash
+# Production stack
 docker-compose -f docker-compose.prod.yml restart
+
+# Development stack (on dev instance)
+docker-compose -f docker-compose.dev.yml restart
 ```
 
 ### Logs and Debugging
@@ -201,12 +254,41 @@ ssh -i finbert-rag-key-new.pem ec2-user@3.109.148.242
 ## 🤝 Contributing
 
 ### Development Workflow
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Make changes and test locally with Docker Compose
-4. Commit changes: `git commit -m 'Add amazing feature'`
-5. Push to branch: `git push origin feature/amazing-feature`  
-6. Open Pull Request
+1. **Development Branch**: All new features start in `develop` branch
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/amazing-feature
+   ```
+
+2. **Local Testing**: Test changes with Docker Compose
+   ```bash
+   docker-compose up --build
+   ```
+
+3. **Development Deployment**: Push to `develop` for automated testing
+   ```bash
+   git commit -m 'Add amazing feature'
+   git push origin feature/amazing-feature
+   # Create PR to develop branch
+   ```
+
+4. **Development Environment**: Changes automatically deploy to development instance
+   - Access at development URLs (ports 8010/8511)
+   - Separate infrastructure from production
+
+5. **Production Release**: After verification on develop
+   ```bash
+   git checkout main
+   git merge develop
+   git push origin main
+   ```
+
+### Branch Strategy
+- **`main`**: Production-ready code, auto-deploys to production instance
+- **`develop`**: Integration branch, auto-deploys to development instance  
+- **`feature/*`**: Feature branches, create PR to `develop`
+- **`hotfix/*`**: Critical fixes, can merge directly to `main`
 
 ### Code Standards
 - Python: PEP 8 formatting, type hints
