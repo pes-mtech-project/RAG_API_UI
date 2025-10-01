@@ -2,10 +2,41 @@
 
 # Test SSH connectivity to EC2 instance
 # Usage: ./test-ssh.sh [elastic-ip]
+# If no IP provided, automatically detects instance IP using AWS CLI
 
-ELASTIC_IP=${1:-"3.7.194.20"}
 KEY_FILE="finbert-rag-key-new.pem"
 
+# Function to get EC2 instance IP automatically
+get_instance_ip() {
+    # Try to get IP from tagged instance
+    INSTANCE_IP=$(aws ec2 describe-instances \
+        --filters 'Name=tag:Name,Values=finbert-rag-instance' 'Name=instance-state-name,Values=running' \
+        --query 'Reservations[0].Instances[0].PublicIpAddress' \
+        --output text 2>/dev/null)
+    
+    if [ "$INSTANCE_IP" != "None" ] && [ "$INSTANCE_IP" != "null" ] && [ ! -z "$INSTANCE_IP" ]; then
+        echo "$INSTANCE_IP"
+    else
+        echo "3.7.194.20"
+    fi
+}
+
+# Get IP address (from parameter or auto-detect)
+if [ -z "$1" ]; then
+    echo "🔍 Detecting EC2 instance IP address..."
+    ELASTIC_IP=$(get_instance_ip)
+    if [ "$ELASTIC_IP" = "3.7.194.20" ]; then
+        echo "❌ Could not detect instance IP automatically - using fallback"
+        echo "   Make sure AWS CLI is configured and instance is running"
+    else
+        echo "✅ Found running instance IP: $ELASTIC_IP"
+    fi
+else
+    ELASTIC_IP=$1
+    echo "🎯 Using provided IP address: $ELASTIC_IP"
+fi
+
+echo ""
 echo "🔍 Testing SSH connectivity..."
 echo "IP: $ELASTIC_IP"
 echo "Key: $KEY_FILE"
@@ -39,6 +70,16 @@ if [ $? -eq 0 ]; then
     echo "✅ SSH test completed successfully!"
     echo "You can now connect using:"
     echo "ssh -i $KEY_FILE ec2-user@$ELASTIC_IP"
+    
+    # Show instance details if we auto-detected
+    if [ -z "$1" ]; then
+        echo ""
+        echo "📋 Instance Details:"
+        aws ec2 describe-instances \
+            --filters 'Name=tag:Name,Values=finbert-rag-instance' 'Name=instance-state-name,Values=running' \
+            --query 'Reservations[0].Instances[0].[InstanceId,InstanceType,State.Name,PublicIpAddress,KeyName]' \
+            --output table 2>/dev/null || echo "   Could not fetch instance details"
+    fi
 else
     echo ""
     echo "❌ SSH connection failed!"

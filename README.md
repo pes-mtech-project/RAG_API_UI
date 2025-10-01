@@ -1,14 +1,14 @@
 # FinBERT News RAG Application
 
-A containerized Financial News Retrieval-Augmented Generation (RAG) system for FinBERT-processed news data with semantic search capabilities. Deployed via Docker containers to AWS EC2 with automated CI/CD.
+A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS EC2.
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐    HTTP/REST    ┌──────────────────┐    HTTPS/SSL       ┌──────────────────┐
-│   Streamlit     │ ────────────── │   FastAPI        │ ──────────────────  │   Elasticsearch  │
-│   Frontend      │                 │   Backend         │                     │   (GCP Cloud)    │
-│   (Port 8501)   │                 │   (Port 8000)     │                     │   (Port 443)     │
+│   Streamlit     │ ────────────────│   FastAPI        │ ──────────────────  │   Elasticsearch  │
+│   Frontend      │                 │   Backend        │                     │   (GCP Cloud)    │
+│   (Port 8501)   │                 │   (Port 8000)    │                     │   (Port 443)     │
 └─────────────────┘                 └──────────────────┘                     └──────────────────┘
        │                                      │
        │                                      │
@@ -19,263 +19,219 @@ A containerized Financial News Retrieval-Augmented Generation (RAG) system for F
    └───────────┘                        └──────────────┘
 ```
 
-## 🐳 Container Services
+## 🐳 Containerized Services
 
 ### API Service (`finbert-api`)
-- FastAPI application with FinBERT integration
-- Handles financial news analysis and RAG operations
-- Exposes REST API endpoints
-- Container: `ghcr.io/pes-mtech-project/finbert-api:latest`
+- **Base**: FastAPI with FinBERT integration
+- **Features**: Financial news analysis, semantic search, RAG operations
+- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:latest`
+- **Port**: 8000
 
-### UI Service (`finbert-ui`)
-- Streamlit web application
-- User-friendly interface for financial document queries
-- Connects to API service
-- Container: `ghcr.io/pes-mtech-project/finbert-ui:latest`
+### UI Service (`finbert-ui`)  
+- **Base**: Streamlit web application
+- **Features**: Interactive interface for document queries and visualization
+- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:latest`
+- **Port**: 8501
 
-## 🚀 Quick Start
+## 🚀 Production Deployment
 
-### Local Development with Docker Compose
-
-```bash
-# Build and start all services
-docker-compose up --build
-
-# Access the application
-# UI: http://localhost:8501
-# API: http://localhost:8000
-# API Docs: http://localhost:8000/docs
-```
-
-### Production Deployment
-
-The application automatically deploys to AWS EC2 via GitHub Actions:
-- **Instance**: `3.109.148.242` (ap-south-1)
+### Live Instance
+- **URL**: http://3.109.148.242:8501 (UI) | http://3.109.148.242:8000 (API)
+- **Region**: AWS ap-south-1 (Mumbai)
+- **Instance Type**: t3.micro
 - **Container Registry**: GitHub Container Registry (ghcr.io)
-- **Deployment**: Automated via GitHub Actions
+
+### Automated CI/CD
+- **Trigger**: Push to `main` branch
+- **Build**: Docker containers with multi-stage builds
+- **Registry**: GitHub Container Registry with automatic versioning
+- **Deploy**: Automated deployment to tagged EC2 instance
+- **Health Checks**: Container health validation post-deployment
 
 ## 📁 Project Structure
 
 ```
 finbert-news-rag-app/
-├── api/                          # FastAPI Backend
-│   ├── main.py                   # API application
-│   ├── requirements.txt          # Python dependencies
-│   └── Dockerfile               # API container
-├── streamlit/                    # Streamlit Frontend
-│   ├── app.py                   # Streamlit application
-│   ├── requirements.txt         # Python dependencies
-│   └── Dockerfile              # Frontend container
-├── docker-compose.yml           # Full stack deployment
-├── setup.sh                     # Development setup
-├── run_api.sh                   # Run API server
-├── run_streamlit.sh             # Run Streamlit app
-├── .env                         # Environment variables
-└── README.md                    # This file
+├── api/                         # FastAPI Backend Service
+│   ├── main.py                  # API application with RAG endpoints
+│   └── requirements.txt         # Backend dependencies
+├── streamlit/                   # Streamlit Frontend Service  
+│   ├── app.py                   # UI application with search interface
+│   └── requirements.txt         # Frontend dependencies
+├── docker/                      # Container Configuration
+│   ├── Dockerfile.api           # API service container
+│   └── Dockerfile.ui            # UI service container
+├── .github/workflows/           # CI/CD Pipeline
+│   └── containers.yml           # Automated build and deployment
+├── scripts/                     # Deployment Utilities
+├── docker-compose.yml           # Local development stack
+├── docker-compose.prod.yml      # Production deployment stack
+├── .env.example                 # Environment template
+├── test-ssh.sh                  # SSH connectivity testing
+├── diagnose-instance.sh         # System diagnostics  
+├── restart-instance.sh          # Instance restart automation
+└── README.md                    # Documentation
 ```
 
-## 🚀 Quick Start
+## 🔧 Local Development
 
-### Option 1: Development Setup (Recommended)
+### Prerequisites
+- Docker and Docker Compose
+- Python 3.9+
+- Git
 
-1. **Setup the environment:**
-   ```bash
-   ./setup.sh
-   ```
+### Quick Start
+```bash
+# Clone the repository
+git clone https://github.com/pes-mtech-project/RAG_API_UI.git
+cd RAG_API_UI
 
-2. **Start the FastAPI backend:**
-   ```bash
-   ./run_api.sh
-   ```
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your Elasticsearch credentials
 
-3. **In a new terminal, start Streamlit frontend:**
-   ```bash
-   ./run_streamlit.sh
-   ```
+# Start services with Docker Compose
+docker-compose up --build
 
-4. **Access the applications:**
-   - **Streamlit App**: http://localhost:8501
-   - **FastAPI API**: http://localhost:8000
-   - **API Documentation**: http://localhost:8000/docs
+# Access applications
+# UI: http://localhost:8501
+# API: http://localhost:8000/docs
+```
 
-### Option 2: Docker Compose
+### Development Mode
+```bash
+# API development (separate terminal)
+cd api
+pip install -r requirements.txt
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-1. **Start the full stack:**
-   ```bash
-   docker-compose up --build
-   ```
-
-2. **Access the applications:**
-   - **Streamlit App**: http://localhost:8501
-   - **FastAPI API**: http://localhost:8000
+# UI development (separate terminal)  
+cd streamlit
+pip install -r requirements.txt
+streamlit run app.py --server.port 8501
+```
 
 ## 📱 Application Features
 
-### 🔍 **Streamlit Frontend**
+### 🎯 Streamlit UI
+- **Dashboard**: System health, document statistics, index overview
+- **Search Interface**: Natural language queries with similarity scoring
+- **Filtering**: Date range, similarity threshold, index selection
+- **Visualization**: Charts for document distribution and search results
+- **Export**: Results export and detailed view capabilities
 
-#### Tab 1: Data Summary
-- **System Health**: Real-time API and Elasticsearch status
-- **Document Statistics**: Total documents, indices count, storage usage
-- **Index Details**: Comprehensive view of all GDELT and processed indices
-- **Visualizations**: 
-  - Document count by index (bar chart)
-  - Storage distribution (pie chart)
-- **Date Ranges**: Coverage periods for each index
+### ⚡ FastAPI Backend
+- **Health Check**: `/health` - System status and connectivity
+- **Search Endpoint**: `/search` - Semantic similarity search with embedding
+- **Statistics**: `/stats` - Comprehensive system and index statistics  
+- **Interactive Docs**: `/docs` - Swagger UI for API exploration
 
-#### Tab 2: Similarity Search
-- **Natural Language Search**: Enter queries like "market volatility" or "technology stocks"
-- **Advanced Filtering**:
-  - Minimum similarity score threshold
-  - Date range filtering
-  - Index-specific searches
-  - Result count limits
-- **Rich Results Display**:
-  - Similarity scores
-  - Article titles, summaries, and URLs
-  - Sentiment analysis data
-  - Key themes and organizations
-  - Full text preview
-- **Search Statistics**: Average scores, best matches, score distributions
+### 🔍 Search Capabilities
+- **Embedding Model**: SentenceTransformers (all-MiniLM-L6-v2)
+- **Search Types**: Semantic similarity, keyword matching, hybrid search
+- **Result Scoring**: Confidence scores with threshold filtering
+- **Rich Metadata**: Sentiment analysis, key themes, organizations
 
-### ⚡ **FastAPI Backend**
+## 🛠️ Operations & Maintenance
 
-#### Core Endpoints:
-- `GET /` - API information
-- `GET /health` - Health check and system status
-- `GET /stats` - Comprehensive system statistics
-- `POST /search` - Semantic similarity search
-- `GET /indices` - List available indices
+### Monitoring
+```bash
+# Check deployment status
+./diagnose-instance.sh
 
-#### Key Features:
-- **Embedding Generation**: Uses SentenceTransformers (all-MiniLM-L6-v2)
-- **Cosine Similarity**: Efficient vector similarity search
-- **Elasticsearch Integration**: Direct connection to Cloud Elasticsearch (GCP)
-- **Advanced Filtering**: Date ranges, index selection, score thresholds
-- **Result Processing**: Extract themes, organizations, sentiment data
-- **Error Handling**: Comprehensive error responses and logging
+# Test SSH connectivity
+./test-ssh.sh
 
-## 🔧 Technical Details
+# Monitor container health
+docker ps -a
+docker logs finbert-api
+docker logs finbert-ui
+```
 
-### **Dependencies**
+### Restart & Recovery
+```bash
+# Restart instance and trigger redeployment
+./restart-instance.sh
 
-#### FastAPI Backend:
-- `fastapi` - Modern web framework
-- `sentence-transformers` - Embedding generation
-- `elasticsearch` - Database connectivity
-- `pydantic` - Data validation
-- `uvicorn` - ASGI server
+# Manual container restart on instance
+docker-compose -f docker-compose.prod.yml restart
+```
 
-#### Streamlit Frontend:
-- `streamlit` - Web app framework
-- `plotly` - Interactive visualizations
-- `pandas` - Data manipulation
-- `requests` - API communication
+### Logs and Debugging
+```bash
+# View container logs
+docker logs finbert-api --tail 50 -f
+docker logs finbert-ui --tail 50 -f
 
-### **Environment Configuration**
+# System diagnostics
+./diagnose-instance.sh
+```
 
-The application uses the provided `.env` file with:
-- **ES_READONLY_HOST**: Cloud Elasticsearch endpoint (GCP Elastic Cloud)
-- **ES_DOCKER_LOCAL_KEY**: Base64 encoded credentials
-- **HF_TOKEN**: HuggingFace API token (if needed)
+## 🔒 Security & Configuration
 
-### **Data Sources**
+### Environment Variables
+- `ELASTICSEARCH_HOST`: Elasticsearch server URL
+- `ELASTICSEARCH_USERNAME`: Authentication username  
+- `ELASTICSEARCH_PASSWORD`: Authentication password
+- `ELASTICSEARCH_USE_SSL`: SSL configuration (true/false)
 
-The system works with:
-- **Raw GDELT Data**: `news_data_gdelt-*` indices
-- **Processed Data**: `*processed*` indices with FinBERT embeddings
-- **Fields Used**:
-  - `title`, `summary`, `full_text`, `url`, `date`
-  - `sentiment` - FinBERT sentiment analysis
-  - `embedding_384d` - Document embeddings
-  - `V1Themes`, `V2Themes` - GDELT themes
-  - `V1Organizations`, `V2Organizations` - Entity extraction
+### Security Groups
+- **SSH**: Port 22 (restricted to authorized IPs)
+- **HTTP**: Ports 8000, 8501 (public access)
+- **HTTPS**: Port 443 (SSL termination)
 
-## 🎯 Use Cases
+### SSH Access
+```bash
+# Connect to production instance
+ssh -i finbert-rag-key-new.pem ec2-user@3.109.148.242
+```
 
-1. **Financial Research**: Find articles about specific market conditions
-2. **Sentiment Analysis**: Explore news sentiment around companies/events
-3. **Theme Discovery**: Identify related news themes and topics
-4. **Historical Analysis**: Search across different time periods
-5. **Content Exploration**: Browse and analyze large news datasets
+## 📊 Performance & Scaling
 
-## 🔍 Search Examples
+### Resource Requirements
+- **Development**: 2GB RAM, 1 CPU core
+- **Production**: t3.micro (1GB RAM, 1 vCPU) - current deployment
+- **Recommended**: t3.small+ for higher traffic
 
-Try these sample queries in the similarity search:
+### Scaling Options
+- **Horizontal**: Multiple EC2 instances with load balancer
+- **Vertical**: Larger instance types for memory-intensive operations
+- **Container**: Kubernetes deployment for advanced orchestration
 
-- **Financial**: "market crash", "stock volatility", "economic recession"
-- **Technology**: "AI breakthrough", "tech earnings", "semiconductor shortage"
-- **Geopolitical**: "trade war", "international relations", "supply chain"
-- **Corporate**: "merger acquisition", "corporate governance", "earnings report"
+## 🤝 Contributing
 
-## 📊 Performance
+### Development Workflow
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Make changes and test locally with Docker Compose
+4. Commit changes: `git commit -m 'Add amazing feature'`
+5. Push to branch: `git push origin feature/amazing-feature`  
+6. Open Pull Request
 
-- **Search Speed**: ~200-500ms for similarity search
-- **Embedding Generation**: ~50-100ms per query
-- **Concurrent Users**: Supports multiple simultaneous searches
-- **Scalability**: Horizontal scaling via Docker containers
+### Code Standards
+- Python: PEP 8 formatting, type hints
+- Docker: Multi-stage builds, non-root users, health checks
+- Documentation: Clear docstrings and README updates
 
-## 🔒 Security
+## 📋 Version History
 
-- **CORS**: Configured for development (restrict in production)
-- **API Keys**: Stored in environment variables
-- **Elasticsearch**: SSL/TLS connections with authentication
-- **Input Validation**: Pydantic models for request/response validation
+### v1.0.0 (2025-10-01)
+- ✅ Initial production release
+- ✅ Containerized FastAPI + Streamlit architecture
+- ✅ GitHub Container Registry integration
+- ✅ Automated CI/CD pipeline to AWS EC2
+- ✅ Semantic search with embedding similarity
+- ✅ Interactive UI with search and visualization
+- ✅ Health monitoring and diagnostics tools
+- ✅ Production deployment with automated restart capabilities
 
-## 🐛 Troubleshooting
+## 📞 Support
 
-### Common Issues:
-
-1. **API Connection Error**:
-   - Ensure FastAPI is running on port 8000
-   - Check if Elasticsearch is accessible
-   - Verify .env file configuration
-
-2. **Empty Search Results**:
-   - Check if processed indices exist
-   - Verify embedding fields are present
-   - Try lowering similarity score threshold
-
-3. **Performance Issues**:
-   - Monitor Elasticsearch cluster health
-   - Check available memory for embedding models
-   - Consider index optimization
-
-### Logs:
-- **FastAPI**: Console output with INFO level logging
-- **Streamlit**: Browser developer console
-- **Elasticsearch**: Check cluster logs if needed
-
-## 🚀 Production Deployment
-
-For production deployment:
-
-1. **Update docker-compose.yml**:
-   - Use production Elasticsearch endpoints
-   - Configure proper SSL certificates
-   - Set up reverse proxy (nginx)
-
-2. **Security Hardening**:
-   - Restrict CORS origins
-   - Use secure API keys
-   - Enable HTTPS
-
-3. **Scaling**:
-   - Use container orchestration (Kubernetes)
-   - Configure load balancing
-   - Monitor resource usage
-
-## 📈 Future Enhancements
-
-- **Advanced Filters**: Source, sentiment, entity-based filtering
-- **Export Features**: CSV/JSON result exports
-- **Visualization**: Timeline charts, sentiment trends
-- **User Management**: Authentication and user preferences
-- **Caching**: Redis for frequent queries
-- **Monitoring**: Prometheus/Grafana integration
+For issues, questions, or contributions:
+- **Repository**: [GitHub Issues](https://github.com/pes-mtech-project/RAG_API_UI/issues)
+- **Production Instance**: http://3.109.148.242:8501
+- **API Documentation**: http://3.109.148.242:8000/docs
 
 ---
 
-**🎉 Your FinBERT News RAG application is ready!**
-
-The system provides a powerful interface for exploring and searching through your FinBERT-processed news data with semantic similarity capabilities.# Infrastructure workflow will auto-run on push
----
+**Status**: ✅ Production Ready | **Last Updated**: October 1, 2025
