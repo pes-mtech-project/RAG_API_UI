@@ -33,19 +33,31 @@ A containerized Financial News Retrieval-Augmented Generation (RAG) system with 
 - **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:latest`
 - **Port**: 8501
 
-## 🚀 Production Deployment
+## 🚀 Deployment Environments
 
-### Live Instance
+### Production (main branch)
 - **URL**: http://3.109.148.242:8501 (UI) | http://3.109.148.242:8000 (API)
+- **Instance Tag**: `finbert-rag-instance`
+- **Ports**: 8000 (API), 8501 (UI)
+- **Container Tags**: `latest`
+
+### Development (develop branch)
+- **URL**: Auto-deployed via GitHub Actions
+- **Instance Tag**: `finbert-rag-dev-instance`  
+- **Ports**: 8010 (API), 8511 (UI)
+- **Container Tags**: `dev`, `develop-dev`
+
+### Infrastructure Details
 - **Region**: AWS ap-south-1 (Mumbai)
 - **Instance Type**: t3.micro
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 
 ### Automated CI/CD
-- **Trigger**: Push to `main` branch
+- **Production**: Triggered on push to `main` branch
+- **Development**: Triggered on push to `develop` branch
 - **Build**: Docker containers with multi-stage builds
-- **Registry**: GitHub Container Registry with automatic versioning
-- **Deploy**: Automated deployment to tagged EC2 instance
+- **Registry**: GitHub Container Registry with environment-specific tagging
+- **Deploy**: Automated deployment to tagged EC2 instances
 - **Health Checks**: Container health validation post-deployment
 
 ## 📁 Project Structure
@@ -134,27 +146,45 @@ streamlit run app.py --server.port 8501
 
 ## 🛠️ Operations & Maintenance
 
-### Monitoring
+### Production Environment
 ```bash
-# Check deployment status
+# Check production deployment status
 ./diagnose-instance.sh
 
-# Test SSH connectivity
+# Test production SSH connectivity
 ./test-ssh.sh
 
-# Monitor container health
-docker ps -a
+# Restart production instance
+./restart-instance.sh
+
+# Monitor production containers
 docker logs finbert-api
 docker logs finbert-ui
 ```
 
-### Restart & Recovery
+### Development Environment  
 ```bash
-# Restart instance and trigger redeployment
-./restart-instance.sh
+# Check development deployment status
+./diagnose-dev-instance.sh
 
-# Manual container restart on instance
+# Test development SSH connectivity
+./test-ssh-dev.sh
+
+# Restart development instance
+./restart-dev-instance.sh
+
+# Monitor development containers
+docker logs finbert-api-dev
+docker logs finbert-ui-dev
+```
+
+### Manual Container Management
+```bash
+# Production stack
 docker-compose -f docker-compose.prod.yml restart
+
+# Development stack (on dev instance)
+docker-compose -f docker-compose.dev.yml restart
 ```
 
 ### Logs and Debugging
@@ -201,12 +231,41 @@ ssh -i finbert-rag-key-new.pem ec2-user@3.109.148.242
 ## 🤝 Contributing
 
 ### Development Workflow
-1. Fork the repository
-2. Create feature branch: `git checkout -b feature/amazing-feature`
-3. Make changes and test locally with Docker Compose
-4. Commit changes: `git commit -m 'Add amazing feature'`
-5. Push to branch: `git push origin feature/amazing-feature`  
-6. Open Pull Request
+1. **Development Branch**: All new features start in `develop` branch
+   ```bash
+   git checkout develop
+   git pull origin develop
+   git checkout -b feature/amazing-feature
+   ```
+
+2. **Local Testing**: Test changes with Docker Compose
+   ```bash
+   docker-compose up --build
+   ```
+
+3. **Development Deployment**: Push to `develop` for automated testing
+   ```bash
+   git commit -m 'Add amazing feature'
+   git push origin feature/amazing-feature
+   # Create PR to develop branch
+   ```
+
+4. **Development Environment**: Changes automatically deploy to development instance
+   - Access at development URLs (ports 8010/8511)
+   - Separate infrastructure from production
+
+5. **Production Release**: After verification on develop
+   ```bash
+   git checkout main
+   git merge develop
+   git push origin main
+   ```
+
+### Branch Strategy
+- **`main`**: Production-ready code, auto-deploys to production instance
+- **`develop`**: Integration branch, auto-deploys to development instance  
+- **`feature/*`**: Feature branches, create PR to `develop`
+- **`hotfix/*`**: Critical fixes, can merge directly to `main`
 
 ### Code Standards
 - Python: PEP 8 formatting, type hints

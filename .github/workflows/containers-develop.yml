@@ -1,0 +1,247 @@
+name: Develop - Container Build & Deploy
+
+on:
+  push:
+    branches: [ develop ]
+    paths:
+      - 'api/**'
+      - 'streamlit/**'
+      - 'docker/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/containers-develop.yml'
+  pull_request:
+    branches: [ develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  REPO_LOWERCASE: pes-mtech-project/rag_api_ui
+  # Development environment images with 'dev' tag
+  API_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-api
+  UI_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-ui
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔐 Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 🏷️ Extract metadata for API
+      id: meta-api
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch,suffix=-dev
+          type=ref,event=pr,suffix=-dev
+          type=raw,value=dev
+
+    - name: 🏷️ Extract metadata for UI
+      id: meta-ui
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.UI_IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch,suffix=-dev
+          type=ref,event=pr,suffix=-dev
+          type=raw,value=dev
+
+    - name: 🏗️ Build and push API Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.api
+        push: true
+        tags: ${{ steps.meta-api.outputs.tags }}
+        labels: ${{ steps.meta-api.outputs.labels }}
+
+    - name: 🏗️ Build and push UI Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.ui
+        push: true
+        tags: ${{ steps.meta-ui.outputs.tags }}
+        labels: ${{ steps.meta-ui.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v3
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ap-south-1
+
+    - name: 🔍 Find development EC2 instance
+      id: find-instance
+      run: |
+        # Look for development instance with specific tag
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters 'Name=tag:Name,Values=finbert-rag-dev-instance' 'Name=instance-state-name,Values=running' \
+          --query 'Reservations[0].Instances[0].InstanceId' \
+          --output text)
+        
+        if [ "$INSTANCE_ID" = "None" ] || [ "$INSTANCE_ID" = "null" ] || [ -z "$INSTANCE_ID" ]; then
+          echo "❌ Development instance not found or not running"
+          echo "Creating development instance..."
+          
+          # Create development instance with different name tag
+          INSTANCE_ID=$(aws ec2 run-instances \
+            --image-id ami-0c2af51e265bd5e0e \
+            --instance-type t3.micro \
+            --key-name finbert-rag-key-new \
+            --security-group-ids sg-0f464c8b21ddae0d2 \
+            --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=finbert-rag-dev-instance},{Key=Environment,Value=development},{Key=Branch,Value=develop}]' \
+            --user-data file://scripts/user-data-dev.sh \
+            --query 'Instances[0].InstanceId' \
+            --output text)
+          
+          echo "✅ Created development instance: $INSTANCE_ID"
+          
+          # Wait for instance to be running
+          aws ec2 wait instance-running --instance-ids $INSTANCE_ID
+          echo "✅ Development instance is now running"
+        fi
+        
+        echo "instance-id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+        
+        # Get instance IP
+        INSTANCE_IP=$(aws ec2 describe-instances \
+          --instance-ids $INSTANCE_ID \
+          --query 'Reservations[0].Instances[0].PublicIpAddress' \
+          --output text)
+        
+        echo "instance-ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
+        echo "🌐 Development instance IP: $INSTANCE_IP"
+
+    - name: 📦 Deploy to development instance
+      env:
+        INSTANCE_IP: ${{ steps.find-instance.outputs.instance-ip }}
+        INSTANCE_ID: ${{ steps.find-instance.outputs.instance-id }}
+      run: |
+        echo "🚀 Deploying to development instance: $INSTANCE_IP"
+        
+        # Wait for SSH to be ready
+        for i in {1..30}; do
+          if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP "echo 'SSH ready'" 2>/dev/null; then
+            echo "✅ SSH connection established"
+            break
+          fi
+          echo "⏳ Waiting for SSH... (attempt $i/30)"
+          sleep 10
+        done
+
+        # Create development docker-compose file
+        ssh -i finbert-rag-key-new.pem -o StrictHostKeyChecking=no ec2-user@$INSTANCE_IP << 'EOF'
+          # Stop existing containers
+          docker-compose -f docker-compose.dev.yml down 2>/dev/null || true
+          
+          # Create development docker-compose file
+          cat > docker-compose.dev.yml << 'COMPOSE_EOF'
+        version: '3.8'
+
+        services:
+          finbert-api-dev:
+            image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:dev
+            container_name: finbert-api-dev
+            ports:
+              - "8010:8000"  # Different port for dev
+            environment:
+              - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-https://34.131.79.115}
+              - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-elastic}
+              - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD}
+              - ELASTICSEARCH_USE_SSL=${ELASTICSEARCH_USE_SSL:-true}
+            restart: unless-stopped
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+
+          finbert-ui-dev:
+            image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:dev
+            container_name: finbert-ui-dev
+            ports:
+              - "8511:8501"  # Different port for dev
+            environment:
+              - API_URL=http://finbert-api-dev:8000
+            depends_on:
+              - finbert-api-dev
+            restart: unless-stopped
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:8501"]
+              interval: 30s
+              timeout: 10s
+              retries: 3
+        COMPOSE_EOF
+
+          # Pull latest development images
+          docker pull ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:dev
+          docker pull ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:dev
+          
+          # Start development services
+          docker-compose -f docker-compose.dev.yml up -d
+          
+          # Wait for services to be healthy
+          sleep 30
+          
+          echo "✅ Development deployment completed"
+          docker ps
+        EOF
+
+    - name: 🔍 Health check development deployment
+      env:
+        INSTANCE_IP: ${{ steps.find-instance.outputs.instance-ip }}
+      run: |
+        echo "🏥 Performing health checks..."
+        
+        # Wait a bit more for services to stabilize
+        sleep 30
+        
+        # Check API health
+        for i in {1..10}; do
+          if curl -f http://$INSTANCE_IP:8010/health 2>/dev/null; then
+            echo "✅ Development API is healthy"
+            break
+          fi
+          echo "⏳ Waiting for API health... (attempt $i/10)"
+          sleep 10
+        done
+        
+        # Check UI availability
+        for i in {1..10}; do
+          if curl -f -s http://$INSTANCE_IP:8511 > /dev/null 2>&1; then
+            echo "✅ Development UI is accessible"
+            break
+          fi
+          echo "⏳ Waiting for UI availability... (attempt $i/10)"
+          sleep 10
+        done
+        
+        echo "🎉 Development deployment successful!"
+        echo "📍 Development URLs:"
+        echo "   API: http://$INSTANCE_IP:8010"
+        echo "   UI:  http://$INSTANCE_IP:8511"
+        echo "   API Docs: http://$INSTANCE_IP:8010/docs"
