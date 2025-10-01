@@ -18,8 +18,49 @@ permissions:
   actions: read
 
 jobs:
-  build-and-push:
+  detect-changes:
     runs-on: ubuntu-latest
+    outputs:
+      api-changed: ${{ steps.changes.outputs.api }}
+      infrastructure-changed: ${{ steps.changes.outputs.infrastructure }}
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: 🔍 Detect changes
+      id: changes
+      run: |
+        # Check for API changes (code that affects the container)
+        if git diff --name-only HEAD~1 HEAD | grep -E '^(api/|docker/|requirements\.txt|Dockerfile)' > /dev/null; then
+          echo "api=true" >> $GITHUB_OUTPUT
+          echo "🔄 API code changes detected - build required"
+        else
+          echo "api=false" >> $GITHUB_OUTPUT
+          echo "✅ No API code changes - skipping build"
+        fi
+        
+        # Check for infrastructure changes
+        if git diff --name-only HEAD~1 HEAD | grep -E '^(infrastructure/|\.github/workflows/)' > /dev/null; then
+          echo "infrastructure=true" >> $GITHUB_OUTPUT
+          echo "🔄 Infrastructure changes detected - deployment required"
+        else
+          echo "infrastructure=false" >> $GITHUB_OUTPUT
+          echo "✅ No infrastructure changes - skipping deployment"
+        fi
+        
+        # Always run on manual trigger or first commit
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+          echo "api=true" >> $GITHUB_OUTPUT
+          echo "infrastructure=true" >> $GITHUB_OUTPUT
+          echo "🚀 Manual trigger or initial commit - running all jobs"
+        fi
+
+  build-and-push:
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    if: needs.detect-changes.outputs.api-changed == 'true'
 
     steps:
     - name: 📥 Checkout repository
@@ -54,9 +95,9 @@ jobs:
         cache-from: type=gha
 
   deploy:
-    needs: build-and-push
+    needs: [detect-changes, build-and-push]
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: always() && (needs.detect-changes.outputs.infrastructure-changed == 'true' || needs.detect-changes.outputs.api-changed == 'true') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     
     steps:
     - name: 📥 Checkout repository
@@ -231,5 +272,12 @@ jobs:
         echo "### 🏗️ Infrastructure" >> $GITHUB_STEP_SUMMARY
         echo "- **Deployment Type:** AWS ECS Fargate" >> $GITHUB_STEP_SUMMARY
         echo "- **Load Balancer:** Application Load Balancer" >> $GITHUB_STEP_SUMMARY
-        echo "- **Auto Scaling:** Enabled (CPU/Memory based)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Auto Scaling:** Enabled (CPU/Memory based)" >> $GITHUB_STEP_SUMMARY  
         echo "- **Health Checks:** Automated with auto-recovery" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Optimization" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ needs.detect-changes.outputs.api-changed }}" = "true" ]; then
+          echo "- **Build:** ✅ Executed (API changes detected)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Build:** ⏩ Skipped (no API changes)" >> $GITHUB_STEP_SUMMARY
+        fi
