@@ -137,6 +137,9 @@ jobs:
       run: |
         echo "🚀 Deploying to development instance: $INSTANCE_IP"
         
+        # Fix SSH key permissions
+        chmod 600 finbert-rag-key-new.pem
+        
         # Wait for SSH to be ready
         for i in {1..30}; do
           if ssh -i finbert-rag-key-new.pem -o ConnectTimeout=5 -o StrictHostKeyChecking=no ubuntu@$INSTANCE_IP "echo 'SSH ready'" 2>/dev/null; then
