@@ -3,12 +3,6 @@ name: Develop - Container Build & Deploy
 on:
   push:
     branches: [ develop ]
-    paths:
-      - 'api/**'
-      - 'streamlit/**'
-      - 'docker/**'
-      - 'docker-compose.yml'
-      - '.github/workflows/containers-develop.yml'
   pull_request:
     branches: [ develop ]
   workflow_dispatch:
