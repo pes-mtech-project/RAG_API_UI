@@ -2,6 +2,8 @@
 
 A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS EC2.
 
+<!-- Trigger workflow - Oct 1, 2025 15:30 -->
+
 ## 🏗️ Architecture
 
 ```
