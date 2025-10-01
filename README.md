@@ -1,8 +1,6 @@
 # FinBERT News RAG Application
 
-A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS ECS.
-
-<!-- Smart build optimization: Skips Docker builds when only infrastructure changes -->
+A scalable Financial News Retrieval-Augmented Generation (RAG) system built with AWS ECS Fargate, GitHub Container Registry, and automated CI/CD pipelines.
 
 ## 🏗️ Architecture
 
@@ -12,42 +10,43 @@ A containerized Financial News Retrieval-Augmented Generation (RAG) system with 
 │   Frontend      │                 │   Backend        │                     │   (GCP Cloud)    │
 │   (Port 8501)   │                 │   (Port 8000)    │                     │   (Port 443)     │
 └─────────────────┘                 └──────────────────┘                     └──────────────────┘
-       │                                      │
-       │                                      │
-   ┌───────────┐                        ┌──────────────┐
-   │ User UI   │                        │ Embeddings   │
-   │ - Summary │                        │ Similarity   │
-   │ - Search  │                        │ Search       │
-   └───────────┘                        └──────────────┘
+       │                                      │                                      │
+       │                              ┌──────────────┐                        ┌──────────────┐
+   ┌───────────┐                      │     ALB      │                        │ Embeddings   │
+   │  AWS ECS  │                      │ Load Balancer│                        │ Similarity   │
+   │  Fargate  │                      │  Auto-Scale  │                        │ Search       │
+   └───────────┘                      └──────────────┘                        └──────────────┘
 ```
 
 ## 🐳 Containerized Services
 
 ### API Service (`finbert-api`)
-- **Base**: FastAPI with FinBERT integration
+- **Framework**: FastAPI with FinBERT integration
 - **Features**: Financial news analysis, semantic search, RAG operations
-- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:latest`
+- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-api`
 - **Port**: 8000
+- **Scaling**: Auto-scaling based on CPU/Memory usage
 
-### UI Service (`finbert-ui`)  
-- **Base**: Streamlit web application
-- **Features**: Interactive interface for document queries and visualization
-- **Container**: `ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:latest`
-- **Port**: 8501
+### Base Image (`finbert-base`)
+- **Purpose**: Pre-built ML dependencies (torch, transformers, sentence-transformers)
+- **Container**: `ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-base`
+- **Build Time**: ~6 minutes (rebuilt weekly)
+- **Performance**: 85-90% faster API builds
 
 ## 🚀 Deployment Environments
 
 ### Production (main branch)
-- **URL**: http://3.109.148.242:8501 (UI) | http://3.109.148.242:8000 (API)
-- **Instance Tag**: `finbert-rag-instance`
-- **Ports**: 8000 (API), 8501 (UI)
+- **Infrastructure**: AWS ECS Fargate cluster
+- **Load Balancer**: Application Load Balancer with health checks
 - **Container Tags**: `latest`
+- **Scaling**: 1-10 tasks based on demand
+- **Monitoring**: CloudWatch logs and metrics
 
 ### Development (develop branch)
-- **URL**: Auto-deployed via GitHub Actions
-- **Instance Tag**: `finbert-rag-dev-instance`  
-- **Ports**: 8010 (API), 8511 (UI)
-- **Container Tags**: `dev`, `develop-dev`
+- **Infrastructure**: Separate ECS cluster for testing
+- **Container Tags**: `develop`
+- **Quick Deploy**: Smart build detection (skips rebuilds for infrastructure-only changes)
+- **Testing**: Automated health checks and rollback
 
 ### Infrastructure Details
 - **Region**: AWS ap-south-1 (Mumbai)

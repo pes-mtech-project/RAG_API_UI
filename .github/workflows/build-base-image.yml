@@ -68,7 +68,7 @@ jobs:
     - name: � Make container package public
       run: |
         # Make the base image package public for ECS access
-        gh api --method PATCH /user/packages/container/rag_api_ui%2Ffinbert-base \
+        gh api --method PATCH /orgs/pes-mtech-project/packages/container/finbert-news-rag-app%2Ffinbert-base \
           --field visibility=public || \
         echo "⚠️ Package might already be public or permissions may be needed"
       env:
