@@ -19,6 +19,9 @@ COPY --chown=appuser:appuser streamlit/requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# Add user's local bin to PATH
+ENV PATH="/home/appuser/.local/bin:${PATH}"
+
 # Copy Streamlit source code
 COPY --chown=appuser:appuser streamlit/ .
 
