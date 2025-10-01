@@ -33,7 +33,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ (commented - too broad, affects CDK infrastructure/lib)
 lib64/
 parts/
 sdist/
@@ -192,7 +192,7 @@ nohup.out
 # === DATA FILES ===
 # Data files and databases
 *.csv
-*.json
+# *.json (commented out - too broad, affects CDK configs)
 *.parquet
 *.pkl
 *.pickle
