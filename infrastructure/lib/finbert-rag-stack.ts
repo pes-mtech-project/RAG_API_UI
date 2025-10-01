@@ -79,14 +79,14 @@ export class FinBertRagStack extends cdk.Stack {
         this.service = new ecsPatterns.ApplicationLoadBalancedFargateService(this, 'FinBertService', {
             cluster: this.cluster,
             serviceName: props.serviceName,
-            cpu: 512,
-            memoryLimitMiB: 1024,
+            cpu: 1024, // Increased for ML models
+            memoryLimitMiB: 2048, // Increased for ML models  
             desiredCount: props.desiredCount,
             publicLoadBalancer: true,
 
             // Task Definition
             taskImageOptions: {
-                image: ecs.ContainerImage.fromRegistry('ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:latest'),
+                image: ecs.ContainerImage.fromRegistry(`ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:${props.environment === 'prod' ? 'latest' : 'develop'}`),
                 containerPort: props.containerPort,
                 containerName: 'finbert-api',
                 executionRole,
@@ -114,14 +114,14 @@ export class FinBertRagStack extends cdk.Stack {
         // Store reference to load balancer
         this.loadBalancer = this.service.loadBalancer;
 
-        // Configure Health Check
+        // Configure Health Check with optimized settings for ML startup
         this.service.targetGroup.configureHealthCheck({
             path: '/health',
             healthyHttpCodes: '200',
-            interval: cdk.Duration.seconds(30),
-            timeout: cdk.Duration.seconds(5),
+            interval: cdk.Duration.seconds(60), // Longer interval for ML startup
+            timeout: cdk.Duration.seconds(30), // Longer timeout for ML models
             healthyThresholdCount: 2,
-            unhealthyThresholdCount: 3,
+            unhealthyThresholdCount: 5, // More retries for slow startup
         });
 
         // Configure Auto Scaling
