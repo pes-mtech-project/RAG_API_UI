@@ -15,17 +15,19 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Use consistent lowercase naming for Docker compatibility
-  API_IMAGE_NAME: pes-mtech-project/finbert-api
-  UI_IMAGE_NAME: pes-mtech-project/finbert-ui
+  REPO_LOWERCASE: pes-mtech-project/rag_api_ui
+  # Use owner and repo name directly for GitHub Container Registry
+  API_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-api
+  UI_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-ui
+
+permissions:
+  contents: read
+  packages: write
+  actions: read
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      actions: read
 
     steps:
     - name: 📥 Checkout repository
@@ -37,8 +39,6 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
-      env:
-        DOCKER_CONFIG: /tmp/.docker
 
     - name: 🏷️ Extract metadata for API
       id: meta-api
