@@ -1,34 +1,16 @@
-# FinBERT API Docker Image
-FROM python:3.9-slim
+# Optimized Dockerfile using pre-built base image for faster builds
+# Falls back to building from scratch if base image not available
+ARG BASE_IMAGE=ghcr.io/pes-mtech-project/rag_api_ui/finbert-base:develop
+FROM ${BASE_IMAGE}
 
-# Set working directory
+# Set working directory (should already exist in base)
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Switch to appuser (should already exist in base)
 USER appuser
 
-# Copy requirements first for better caching
-COPY --chown=appuser:appuser api/requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Add user's local bin to PATH
-ENV PATH="/home/appuser/.local/bin:${PATH}"
-
-# Copy API source code
+# Copy API source code (only this layer rebuilds on code changes)
 COPY --chown=appuser:appuser api/ .
-
-# Create models directory
-RUN mkdir -p /app/models
 
 # Expose port
 EXPOSE 8000
