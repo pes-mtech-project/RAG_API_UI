@@ -102,14 +102,43 @@ jobs:
     - name: 📋 Get EC2 instance details
       id: ec2-info
       run: |
-        INSTANCE_IP=$(aws ec2 describe-addresses --region ap-south-1 --query 'Addresses[0].PublicIp' --output text)
-        INSTANCE_ID=$(aws ec2 describe-addresses --region ap-south-1 --query 'Addresses[0].InstanceId' --output text)
+        # Get Elastic IP details using the tag filter
+        INSTANCE_IP=$(aws ec2 describe-addresses --region ap-south-1 --filters "Name=tag:Name,Values=finbert-rag-eip" --query 'Addresses[0].PublicIp' --output text)
+        INSTANCE_ID=$(aws ec2 describe-addresses --region ap-south-1 --filters "Name=tag:Name,Values=finbert-rag-eip" --query 'Addresses[0].InstanceId' --output text)
+        
+        echo "🔍 Looking for tagged Elastic IP..."
+        if [ "$INSTANCE_IP" = "None" ] || [ "$INSTANCE_IP" = "null" ]; then
+          echo "❌ No Elastic IP found with tag 'finbert-rag-eip'"
+          exit 1
+        fi
+        
+        if [ "$INSTANCE_ID" = "None" ] || [ "$INSTANCE_ID" = "null" ]; then
+          echo "❌ No instance associated with Elastic IP"
+          exit 1
+        fi
         
         echo "INSTANCE_IP=$INSTANCE_IP" >> $GITHUB_OUTPUT
         echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_OUTPUT
         
         echo "🎯 Target EC2 Instance: $INSTANCE_ID"
         echo "🌐 Public IP: $INSTANCE_IP"
+        
+        # Verify instance is running
+        INSTANCE_STATE=$(aws ec2 describe-instances --region ap-south-1 --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].State.Name' --output text)
+        echo "📊 Instance state: $INSTANCE_STATE"
+        
+        if [ "$INSTANCE_STATE" = "stopped" ]; then
+          echo "▶️ Starting instance..."
+          aws ec2 start-instances --region ap-south-1 --instance-ids $INSTANCE_ID
+          echo "⏳ Waiting for instance to be running..."
+          aws ec2 wait instance-running --region ap-south-1 --instance-ids $INSTANCE_ID
+          echo "✅ Instance is now running"
+        elif [ "$INSTANCE_STATE" = "running" ]; then
+          echo "✅ Instance is already running"
+        else
+          echo "❌ Instance is in unexpected state: $INSTANCE_STATE"
+          exit 1
+        fi
 
     - name: 🚀 Deploy to EC2
       run: |
