@@ -86,8 +86,8 @@ export class FinBertRagStack extends cdk.Stack {
 
             // Task Definition
             taskImageOptions: {
-                image: ecs.ContainerImage.fromRegistry(`ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:${props.environment === 'prod' ? 'latest' : 'develop'}`),
-                containerPort: props.containerPort,
+                image: ecs.ContainerImage.fromRegistry('nginx:latest'), // Temporary public image for quick deployment test
+                containerPort: 80, // nginx default port
                 containerName: 'finbert-api',
                 executionRole,
                 taskRole,
@@ -96,8 +96,7 @@ export class FinBertRagStack extends cdk.Stack {
                     streamPrefix: 'ecs',
                 }),
                 environment: {
-                    'API_HOST': '0.0.0.0',
-                    'API_PORT': props.containerPort.toString(),
+                    'NGINX_PORT': '80',
                     'ENVIRONMENT': props.environment,
                 },
             },
@@ -114,14 +113,14 @@ export class FinBertRagStack extends cdk.Stack {
         // Store reference to load balancer
         this.loadBalancer = this.service.loadBalancer;
 
-        // Configure Health Check with optimized settings for ML startup
+        // Configure Health Check for nginx test
         this.service.targetGroup.configureHealthCheck({
-            path: '/health',
+            path: '/',
             healthyHttpCodes: '200',
-            interval: cdk.Duration.seconds(60), // Longer interval for ML startup
-            timeout: cdk.Duration.seconds(30), // Longer timeout for ML models
+            interval: cdk.Duration.seconds(30),
+            timeout: cdk.Duration.seconds(5),
             healthyThresholdCount: 2,
-            unhealthyThresholdCount: 5, // More retries for slow startup
+            unhealthyThresholdCount: 3,
         });
 
         // Configure Auto Scaling
@@ -144,7 +143,7 @@ export class FinBertRagStack extends cdk.Stack {
 
         // Security Group Configuration
         this.service.service.connections.allowFromAnyIpv4(
-            ec2.Port.tcp(props.containerPort),
+            ec2.Port.tcp(80),
             'Allow HTTP traffic from ALB'
         );
 
