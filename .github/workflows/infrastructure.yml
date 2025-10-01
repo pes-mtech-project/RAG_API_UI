@@ -90,7 +90,7 @@ jobs:
         # Import the key pair using base64 encoding (remove line breaks for compatibility)
         if aws ec2 import-key-pair \
           --key-name $KEY_NAME \
-          --public-key-material "$(echo "$PUBLIC_KEY" | base64 | tr -d '\n')" >/dev/null 2>&1; then
+          --public-key-material "$(echo -n "$PUBLIC_KEY" | base64 | tr -d '\n')" >/dev/null 2>&1; then
           echo "✅ SSH key pair imported: $KEY_NAME"
         else
           echo "ℹ️ Key pair already exists or import failed, continuing..."
