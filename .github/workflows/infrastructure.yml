@@ -64,16 +64,66 @@ jobs:
         echo "🔍 Checking free tier eligible instance types in ap-south-1..."
         aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType' --output text || echo "Could not check free tier types"
         
-        # Create key pair if it doesn't exist
-        KEY_NAME="finbert-rag-key"
-        if ! aws ec2 describe-key-pairs --key-names $KEY_NAME >/dev/null 2>&1; then
-          echo "🔑 Creating EC2 Key Pair..."
-          aws ec2 create-key-pair --key-name $KEY_NAME --query 'KeyMaterial' --output text > finbert-rag-key.pem
-          chmod 600 finbert-rag-key.pem
-          echo "✅ Key pair created: finbert-rag-key.pem"
-        else
-          echo "✅ Key pair already exists"
-        fi
+        # Import existing SSH key pair
+        KEY_NAME="finbert-rag-key-new"
+        echo "🔑 Setting up SSH key pair..."
+        
+        # Delete existing key if it exists
+        aws ec2 delete-key-pair --key-name $KEY_NAME 2>/dev/null || true
+        
+        # Import the public key from our existing key pair
+        echo "� Importing SSH public key..."
+        aws ec2 import-key-pair \
+          --key-name $KEY_NAME \
+          --public-key-material "${{ secrets.SSH_PUBLIC_KEY }}"
+        
+        echo "✅ SSH key pair imported: $KEY_NAME"
+        
+        # Create IAM role for EC2 with SSM permissions
+        echo "🔐 Creating IAM role for EC2..."
+        
+        # Create trust policy for EC2
+        cat > trust-policy.json << 'EOF'
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "ec2.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+        EOF
+        
+        # Create IAM role
+        ROLE_NAME="FinBERT-RAG-EC2-SSM-Role"
+        aws iam create-role \
+          --role-name $ROLE_NAME \
+          --assume-role-policy-document file://trust-policy.json 2>/dev/null || \
+          echo "IAM role already exists"
+        
+        # Attach SSM managed policy
+        aws iam attach-role-policy \
+          --role-name $ROLE_NAME \
+          --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore 2>/dev/null || \
+          echo "SSM policy already attached"
+        
+        # Create instance profile
+        PROFILE_NAME="FinBERT-RAG-EC2-Profile"
+        aws iam create-instance-profile \
+          --instance-profile-name $PROFILE_NAME 2>/dev/null || \
+          echo "Instance profile already exists"
+        
+        # Add role to instance profile
+        aws iam add-role-to-instance-profile \
+          --instance-profile-name $PROFILE_NAME \
+          --role-name $ROLE_NAME 2>/dev/null || \
+          echo "Role already added to instance profile"
+        
+        echo "✅ IAM role and instance profile ready"
         
         # Create security group
         SG_NAME="finbert-rag-sg"
@@ -191,6 +241,7 @@ jobs:
             --instance-type $INSTANCE_TYPE \
             --key-name $KEY_NAME \
             --security-group-ids $SG_ID \
+            --iam-instance-profile Name=$PROFILE_NAME \
             --user-data file://user_data.sh \
             --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
             --query 'Instances[0].InstanceId' \
@@ -205,6 +256,7 @@ jobs:
               --instance-type $INSTANCE_TYPE \
               --key-name $KEY_NAME \
               --security-group-ids $SG_ID \
+              --iam-instance-profile Name=$PROFILE_NAME \
               --user-data file://user_data.sh \
               --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value='$INSTANCE_NAME'}]' \
               --query 'Instances[0].InstanceId' \
