@@ -15,8 +15,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  API_IMAGE_NAME: ${{ github.repository }}/finbert-api
-  UI_IMAGE_NAME: ${{ github.repository }}/finbert-ui
+  # Convert repository name to lowercase for Docker compatibility
+  API_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-api
+  UI_IMAGE_NAME: pes-mtech-project/rag_api_ui/finbert-ui
 
 jobs:
   build-and-push:
@@ -35,6 +36,8 @@ jobs:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+      env:
+        DOCKER_CONFIG: /tmp/.docker
 
     - name: 🏷️ Extract metadata for API
       id: meta-api
