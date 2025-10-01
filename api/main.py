@@ -163,12 +163,12 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
+    """Health check endpoint - always returns healthy for load balancer"""
+    es_status = "disconnected"
     try:
         es = get_elasticsearch_client()
         
         # Try cluster health (might fail with readonly permissions)
-        es_status = "unknown"
         try:
             cluster_health = es.cluster.health()
             es_status = cluster_health["status"]
@@ -180,13 +180,18 @@ async def health_check():
             except Exception:
                 es_status = "readonly_limited"
         
-        return {
-            "status": "healthy",
-            "elasticsearch": es_status,
-            "timestamp": datetime.now().isoformat()
-        }
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Service unhealthy: {e}")
+        logger.warning(f"Elasticsearch connection issue during health check: {e}")
+        es_status = "disconnected"
+    
+    # Always return 200 OK for load balancer health checks
+    # Elasticsearch issues shouldn't fail container health
+    return {
+        "status": "healthy", 
+        "api": "operational",
+        "elasticsearch": es_status,
+        "timestamp": datetime.now().isoformat()
+    }
 
 @app.get("/stats", response_model=SystemStats)
 async def get_system_stats():
