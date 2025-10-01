@@ -140,7 +140,27 @@ jobs:
         echo "instance-ip=$INSTANCE_IP" >> $GITHUB_OUTPUT
         echo "🌐 Development instance IP: $INSTANCE_IP"
 
-    - name: 🔐 Setup SSH key
+    - name: �️ Ensure security group allows port 8010
+      run: |
+        # Check if port 8010 is already allowed
+        EXISTING_RULE=$(aws ec2 describe-security-groups \
+          --group-ids sg-0f464c8b21ddae0d2 \
+          --query 'SecurityGroups[0].IpPermissions[?FromPort==`8010`&&ToPort==`8010`]' \
+          --output text)
+        
+        if [ -z "$EXISTING_RULE" ]; then
+          echo "🔓 Adding port 8010 to security group for development API access..."
+          aws ec2 authorize-security-group-ingress \
+            --group-id sg-0f464c8b21ddae0d2 \
+            --protocol tcp \
+            --port 8010 \
+            --cidr 0.0.0.0/0
+          echo "✅ Port 8010 added to security group"
+        else
+          echo "✅ Port 8010 already allowed in security group"
+        fi
+
+    - name: �🔐 Setup SSH key
       run: |
         # Create SSH key from secret
         mkdir -p ~/.ssh
