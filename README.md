@@ -1,8 +1,8 @@
 # FinBERT News RAG Application
 
-A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS EC2.
+A containerized Financial News Retrieval-Augmented Generation (RAG) system with Docker deployment, GitHub Container Registry, and automated CI/CD to AWS ECS.
 
-<!-- Trigger workflow - Oct 1, 2025 15:30 -->
+<!-- Smart build optimization: Skips Docker builds when only infrastructure changes -->
 
 ## 🏗️ Architecture
 
