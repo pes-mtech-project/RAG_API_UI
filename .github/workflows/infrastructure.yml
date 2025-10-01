@@ -165,8 +165,18 @@ jobs:
         
         # Launch EC2 instance
         INSTANCE_NAME="finbert-rag-instance"
-        if ! aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text | grep -v "None" >/dev/null 2>&1; then
-          echo "🚀 Launching EC2 instance..."
+        
+        # Check for existing running instance
+        EXISTING_INSTANCE=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=running" --query 'Reservations[0].Instances[0].InstanceId' --output text 2>/dev/null || echo "None")
+        
+        if [ "$EXISTING_INSTANCE" = "None" ] || [ -z "$EXISTING_INSTANCE" ]; then
+          echo "🚀 No running instance found, launching new EC2 instance..."
+          
+          # Clean up any terminated instances (informational)
+          TERMINATED_COUNT=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$INSTANCE_NAME" "Name=instance-state-name,Values=terminated" --query 'length(Reservations[].Instances[])')
+          if [ "$TERMINATED_COUNT" -gt 0 ]; then
+            echo "ℹ️ Found $TERMINATED_COUNT terminated instances (will be auto-cleaned by AWS)"
+          fi
           
           # User data script for instance initialization (minimal for reliability)
           cat > user_data.sh << 'USERDATA'
@@ -188,14 +198,27 @@ jobs:
         echo "$(date): User data script completed" >> /var/log/user-data.log
         USERDATA
           
-          # Get the latest Amazon Linux 2023 AMI for the current region
+          # Get the latest Amazon Linux 2023 AMI for ap-south-1
+          echo "🔍 Finding latest Amazon Linux 2023 AMI for ap-south-1..."
           AMI_ID=$(aws ec2 describe-images \
             --owners amazon \
-            --filters 'Name=name,Values=al2023-ami-*-x86_64' 'Name=state,Values=available' \
+            --filters 'Name=name,Values=al2023-ami-*-x86_64' 'Name=state,Values=available' 'Name=architecture,Values=x86_64' \
             --query 'Images | sort_by(@, &CreationDate) | [-1].ImageId' \
             --output text)
           
-          echo "🔍 Using AMI: $AMI_ID in region: $(aws configure get region)"
+          # Validate AMI ID
+          if [ -z "$AMI_ID" ] || [ "$AMI_ID" = "None" ] || [ "$AMI_ID" = "null" ]; then
+            echo "❌ Failed to find Amazon Linux 2023 AMI"
+            echo "Available AMIs:"
+            aws ec2 describe-images --owners amazon --filters 'Name=name,Values=al2023-ami-*' --query 'Images[0:5].[ImageId,Name,CreationDate]' --output table
+            exit 1
+          fi
+          
+          echo "✅ Using AMI: $AMI_ID in region: ap-south-1"
+          
+          # Get AMI details for validation
+          AMI_NAME=$(aws ec2 describe-images --image-ids $AMI_ID --query 'Images[0].Name' --output text)
+          echo "📋 AMI Name: $AMI_NAME"
           
           # Try t2.micro first
           INSTANCE_TYPE="t2.micro"
