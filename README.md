@@ -242,4 +242,4 @@ For production deployment:
 
 **🎉 Your FinBERT News RAG application is ready!**
 
-The system provides a powerful interface for exploring and searching through your FinBERT-processed news data with semantic similarity capabilities.
+The system provides a powerful interface for exploring and searching through your FinBERT-processed news data with semantic similarity capabilities.# Infrastructure workflow will auto-run on push
