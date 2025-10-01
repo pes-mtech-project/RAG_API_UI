@@ -1,6 +1,6 @@
 # FinBERT News RAG Application
 
-A comprehensive Retrieval-Augmented Generation (RAG) system for FinBERT-processed news data with semantic search capabilities.
+A containerized Financial News Retrieval-Augmented Generation (RAG) system for FinBERT-processed news data with semantic search capabilities. Deployed via Docker containers to AWS EC2 with automated CI/CD.
 
 ## 🏗️ Architecture
 
@@ -18,6 +18,41 @@ A comprehensive Retrieval-Augmented Generation (RAG) system for FinBERT-processe
    │ - Search  │                        │ Search       │
    └───────────┘                        └──────────────┘
 ```
+
+## 🐳 Container Services
+
+### API Service (`finbert-api`)
+- FastAPI application with FinBERT integration
+- Handles financial news analysis and RAG operations
+- Exposes REST API endpoints
+- Container: `ghcr.io/pes-mtech-project/finbert-api:latest`
+
+### UI Service (`finbert-ui`)
+- Streamlit web application
+- User-friendly interface for financial document queries
+- Connects to API service
+- Container: `ghcr.io/pes-mtech-project/finbert-ui:latest`
+
+## 🚀 Quick Start
+
+### Local Development with Docker Compose
+
+```bash
+# Build and start all services
+docker-compose up --build
+
+# Access the application
+# UI: http://localhost:8501
+# API: http://localhost:8000
+# API Docs: http://localhost:8000/docs
+```
+
+### Production Deployment
+
+The application automatically deploys to AWS EC2 via GitHub Actions:
+- **Instance**: `3.109.148.242` (ap-south-1)
+- **Container Registry**: GitHub Container Registry (ghcr.io)
+- **Deployment**: Automated via GitHub Actions
 
 ## 📁 Project Structure
 

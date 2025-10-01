@@ -1,12 +1,8 @@
 version: '3.8'
 
 services:
-  # FastAPI Backend
   finbert-api:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.api
-    image: ghcr.io/pes-mtech-project/finbert-api:latest
+    image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:latest
     container_name: finbert-api
     ports:
       - "8000:8000"
@@ -15,25 +11,18 @@ services:
       - API_PORT=8000
       - FINBERT_MODEL_PATH=/app/models/finbert
       - CACHE_SIZE=1000
-    volumes:
-      - ./.env:/app/.env
-      - ./models:/app/models
     networks:
       - finbert-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    restart: unless-stopped
 
-  # Streamlit Frontend
   finbert-ui:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.ui
-    image: ghcr.io/pes-mtech-project/finbert-ui:latest
+    image: ghcr.io/pes-mtech-project/rag_api_ui/finbert-ui:latest
     container_name: finbert-ui
     ports:
       - "8501:8501"
@@ -42,18 +31,18 @@ services:
       - UI_PORT=8501
       - API_URL=http://finbert-api:8000
       - API_BASE_URL=http://finbert-api:8000
+    networks:
+      - finbert-network
     depends_on:
       finbert-api:
         condition: service_healthy
-    networks:
-      - finbert-network
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-    restart: unless-stopped
 
 networks:
   finbert-network:
