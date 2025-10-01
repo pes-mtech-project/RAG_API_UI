@@ -70,23 +70,32 @@ jobs:
         echo "🔍 Checking free tier eligible instance types in ap-south-1..."
         aws ec2 describe-instance-types --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType' --output text || echo "Could not check free tier types"
         
-        # Setup SSH key pair
+        # Setup SSH key pair - ALWAYS use the same key for consistency
         KEY_NAME="finbert-rag-key-new"
-        echo "🔑 Setting up SSH key pair..."
+        echo "🔑 Setting up SSH key pair: $KEY_NAME"
         
-        # Check if key already exists
-        if aws ec2 describe-key-pairs --key-names $KEY_NAME >/dev/null 2>&1; then
-          echo "✅ SSH key pair already exists: $KEY_NAME"
-        else
-          # Create new key pair since import might fail
-          echo "🆕 Creating new SSH key pair..."
-          aws ec2 create-key-pair --key-name $KEY_NAME --query 'KeyMaterial' --output text > finbert-rag-key-new.pem
-          chmod 600 finbert-rag-key-new.pem
-          echo "✅ SSH key pair created: $KEY_NAME"
-          
-          # Store key in GitHub secrets for future use
-          echo "💾 Key pair created successfully"
-        fi
+        # Always delete and recreate to ensure consistency
+        echo "🧹 Cleaning up any existing key pair..."
+        aws ec2 delete-key-pair --key-name $KEY_NAME 2>/dev/null || echo "No existing key to delete"
+        
+        # Import the specific public key that matches your private key
+        echo "📤 Importing your SSH public key..."
+        
+        # Create the public key content (this matches your finbert-rag-key-new.pem)
+        cat > temp_public_key.pub << 'EOF'
+        ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDgmTmruJ6hX7e7YM1VJ0j2MrZGyANVCOln77jumi1JmHDta65DeJf2e/saAu5W/dvkN9zw0iQtXTgaANdMq7Xn6mvz80CdIm2ckg0aDAJjKXv+R23QhrhVD/y/L7aEvSXQzP+O1+dK1TURSfCkXV5nXXp+mtJLBaFh46da9MS1lj6wF0TVFv6vdcpIDGAW+XcwUFCS1ppvzTiVk7hJ2yGn9L8lv7VStqxKTJpw0J97a+B70M7Ye2n5+5CA+WLiTifVcS9odFZotZ7b/0LcQISaFTnY+4oT4cvL9p2ataebRzDjWj+VEiwq5eRDEGzNXzsRdzDR6b3xwYem7ZAbsRpX
+        EOF
+        
+        # Import the key pair
+        aws ec2 import-key-pair \
+          --key-name $KEY_NAME \
+          --public-key-material file://temp_public_key.pub
+        
+        # Clean up temp file
+        rm -f temp_public_key.pub
+        
+        echo "✅ SSH key pair imported: $KEY_NAME"
+        echo "🔑 This key will work with your existing finbert-rag-key-new.pem file"
         
         # Setup IAM role for EC2 with SSM permissions (optional)
         echo "🔐 Setting up IAM role for SSM access..."
