@@ -1,6 +1,31 @@
 # FinBERT News RAG Application
 
-A scalable Financial News Retrieval-Augmented Generation (RAG) system built with AWS ECS Fargate, GitHub Container Registry, and automated CI/CD pipelines.
+A production-ready Financial News Retrieval-Augmented Generation (RAG) system built with AWS ECS Fargate, GitHub Container Registry, and automated CI/CD pipelines. Features semantic vector search, automated versioning, and zero-downtime deployments.
+
+## 🎯 Quick Start
+
+### Production Release
+```bash
+# Prepare for main branch merge
+./scripts/release-manager.sh prepare
+
+# Create production release (patch/minor/major)
+./scripts/release-manager.sh release patch
+
+# Check deployment status
+./scripts/release-manager.sh deployment
+```
+
+### Local Development
+```bash
+# Start all services
+docker-compose up --build
+
+# API only (with local Elasticsearch)  
+cd api && uvicorn main:app --reload
+```
+
+> **📋 For detailed deployment instructions, see [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)**
 
 ## 🏗️ Architecture
 
@@ -33,20 +58,36 @@ A scalable Financial News Retrieval-Augmented Generation (RAG) system built with
 - **Build Time**: ~6 minutes (rebuilt weekly)
 - **Performance**: 85-90% faster API builds
 
-## 🚀 Deployment Environments
+## � Production Workflow
 
-### Production (main branch)
-- **Infrastructure**: AWS ECS Fargate cluster
-- **Load Balancer**: Application Load Balancer with health checks
-- **Container Tags**: `latest`
+### Release Process
+1. **Development**: Work on `develop` or `feature/*` branches
+2. **Testing**: Automated quality checks and development deployment
+3. **Preparation**: Use `./scripts/release-manager.sh prepare` 
+4. **PR & Merge**: Create PR to `main`, review, and merge
+5. **Release**: Use `./scripts/release-manager.sh release patch/minor/major`
+6. **Deployment**: Automated production deployment with version tagging
+
+### Version Management
+- **Semantic Versioning**: `MAJOR.MINOR.PATCH` format
+- **Auto-tagging**: GitHub releases created automatically  
+- **Container Tags**: Multiple tags per version (`latest`, `prod`, `v1.2.3`)
+- **Rollback Ready**: Previous versions always available
+
+## �🚀 Deployment Environments
+
+### Production (main branch → `latest` tag)
+- **Infrastructure**: AWS ECS Fargate cluster (`finbert-rag-prod`)
+- **Load Balancer**: Application Load Balancer with SSL
+- **Container Tags**: `latest`, `prod`, `v1.2.3`
 - **Scaling**: 1-10 tasks based on demand
-- **Monitoring**: CloudWatch logs and metrics
+- **Monitoring**: CloudWatch logs, health checks, performance metrics
 
-### Development (develop branch)
-- **Infrastructure**: Separate ECS cluster for testing
-- **Container Tags**: `develop`
-- **Quick Deploy**: Smart build detection (skips rebuilds for infrastructure-only changes)
-- **Testing**: Automated health checks and rollback
+### Development (develop branch → `develop` tag)  
+- **Infrastructure**: Separate ECS cluster (`finbert-rag-dev`)
+- **Container Tags**: `develop`, `dev`
+- **Features**: Smart build detection, quick deployments
+- **Testing**: Automated health checks, rollback capability
 
 ### Infrastructure Details
 - **Region**: AWS ap-south-1 (Mumbai)

@@ -2,7 +2,7 @@ name: ECS - Container Build & Deploy
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ develop ]  # Only for development environment
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
