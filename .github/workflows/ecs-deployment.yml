@@ -2,7 +2,7 @@ name: ECS - Container Build & Deploy
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ develop ]  # Only for development environment
   pull_request:
     branches: [ main, develop ]
   workflow_dispatch:
@@ -81,8 +81,8 @@ jobs:
         tags: |
           type=ref,event=branch
           type=ref,event=pr
-          type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=sha,prefix=sha-
+          type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
 
     - name: 🏗️ Build and push API Docker image
       uses: docker/build-push-action@v5

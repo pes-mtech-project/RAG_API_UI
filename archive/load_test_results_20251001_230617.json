@@ -1,0 +1,24 @@
+{
+  "test_config": {
+    "target_tps": 5.0,
+    "duration": 60,
+    "ramp_up": 10
+  },
+  "results": {
+    "total_requests": 251,
+    "success_count": 251,
+    "error_count": 0,
+    "success_rate": 100.0,
+    "actual_tps": 4.08,
+    "duration_seconds": 61.48,
+    "response_times": {
+      "min": 0.052,
+      "max": 0.281,
+      "mean": 0.082,
+      "median": 0.08,
+      "p95": 0.13,
+      "p99": 0.218
+    }
+  },
+  "errors": []
+}

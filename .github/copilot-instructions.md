@@ -1,3 +1,74 @@
+# FinBERT News RAG App — Copilot Instructions
+
+## Project Overview
+This is a multi-service, containerized RAG (Retrieval-Augmented Generation) system for financial news, built with FastAPI (API), Streamlit (UI), and deployed via AWS ECS Fargate. CI/CD is automated using GitHub Actions, with images stored in GitHub Container Registry (GHCR).
+
+## Architecture & Service Boundaries
+- **API**: FastAPI app (`api/`), exposes REST endpoints, containerized via `docker/Dockerfile.api`.
+- **UI**: Streamlit app (`streamlit/`), containerized via `docker/Dockerfile.ui`.
+- **Infrastructure**: AWS CDK (TypeScript, `infrastructure/`), manages ECS clusters, ALB, scaling, networking.
+- **Data Layer**: Elasticsearch (GCP Cloud, external), accessed via API.
+- **Deployment**: Docker Compose for local/dev, ECS Fargate for prod/dev environments.
+
+## Developer Workflows
+- **Local Development**:
+	- Start all services: `docker-compose up --build`
+	- API only: `cd api && uvicorn main:app --reload`
+	- UI only: `cd streamlit && streamlit run app.py`
+	- Separate UI for dev: `./run-ui-separately.sh [API_HOST] [API_PORT]`
+- **Build & Deploy**:
+	- Build containers: `./scripts/build.sh latest`
+	- Deploy local: `./scripts/deploy-local.sh`
+	- ECS/CDK deploy: `cd infrastructure && npm run deploy:dev|prod`
+- **Diagnostics & Maintenance**:
+	- Dev instance: `./archive/diagnose-dev-instance.sh`, `./archive/restart-dev-instance.sh`
+	- Prod instance: `./archive/diagnose-instance.sh`, `./archive/restart-instance.sh`
+	- SSH test: `./archive/test-ssh-dev.sh` or `./archive/test-ssh.sh`
+
+## CI/CD & Branching
+- **Production**: `main` branch → full stack deploy to prod ECS
+- **Development**: `develop` branch → API deploy to dev ECS, UI runs locally
+- **Feature/Hotfix**: PRs to `develop` or `main` as per urgency
+- **Container tags**: `latest` (prod), `develop` (dev)
+
+## Conventions & Patterns
+- **Docker**: Multi-stage builds, health checks, non-root users
+- **Python**: PEP 8, type hints, clear docstrings
+- **Infrastructure**: All CDK stacks parameterized by environment (`dev`/`prod`)
+- **Environment Variables**: Set via `.env` and CDK, e.g. `API_PORT`, `ENVIRONMENT`, `API_HOST`
+- **Monitoring**: CloudWatch logs, `/health` endpoint for ALB health checks
+
+## Integration Points
+- **Elasticsearch**: API connects to GCP-hosted Elasticsearch, credentials via `.env`
+- **GHCR**: All container images pushed/pulled from GitHub Container Registry
+- **AWS**: ECS, ALB, CloudWatch, IAM, VPC, Security Groups managed via CDK
+
+## Key Files & Directories
+- `api/`, `streamlit/`: Service source code
+- `docker/`: Dockerfiles for all containers
+- `infrastructure/`: AWS CDK code, deployment scripts
+- `archive/`: Diagnostic and maintenance scripts
+- `scripts/`: Build/deploy scripts
+- `.env.example`: Environment variable template
+
+## Example: Health Check Pattern
+All containers expose `/health` endpoint for ALB/ECS health checks. See `main.py` (API) and `app.py` (UI) for implementation.
+
+## Example: Automated Deployment
+On push to `main` or `develop`, GitHub Actions build containers, push to GHCR, and trigger ECS/CDK deployment. See workflow logs for status.
+
+## Troubleshooting
+- Use diagnostic scripts in `archive/` for instance/container issues
+- Check CloudWatch logs for ECS task/container failures
+- Use `npm run diff` in `infrastructure/` to view pending CDK changes
+
+---
+**For unclear or missing patterns, ask the user for clarification.**
+
+# Workspace Rules (retain for agent compliance)
+- Work through each checklist item systematically.
+- Keep communication concise and focused.
+- Follow development best practices.
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 - [x] Verify that the copilot-instructions.md file in the .github directory is created.
 

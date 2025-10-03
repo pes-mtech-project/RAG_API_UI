@@ -1,11 +1,10 @@
-# 🔄 DEVELOPMENT WORKFLOW
 name: Development Checks
 
 on:
   push:
     branches-ignore: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, develop ]
 
 jobs:
   # ===== CODE QUALITY CHECKS =====
