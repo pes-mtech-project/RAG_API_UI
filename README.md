@@ -160,6 +160,8 @@ streamlit run app.py --server.port 8501
 - **Search Endpoint**: `/search` - Semantic similarity search with embedding
 - **Statistics**: `/stats` - Comprehensive system and index statistics  
 - **Interactive Docs**: `/docs` - Swagger UI for API exploration
+- **Debug Search**: `/debug_search` - Analyze search issues and field compatibility
+- **Test Search**: `/test_search` - Use pregenerated embeddings for testing
 
 ### 🔍 Search Capabilities
 - **Embedding Model**: SentenceTransformers (all-MiniLM-L6-v2)
@@ -218,6 +220,28 @@ docker logs finbert-ui --tail 50 -f
 
 # System diagnostics
 ./diagnose-instance.sh
+
+# Test search functionality
+python test_search_api.py
+
+# Elasticsearch diagnostics (requires ES credentials)
+python elasticsearch_diagnostics.py
+```
+
+### Search Troubleshooting
+```bash
+# Test API health
+curl http://your-api-url/health
+
+# Debug search issues
+curl -X POST http://your-api-url/debug_search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "HDFC Bank Finance", "limit": 5}'
+
+# Test with pregenerated embeddings
+curl -X POST http://your-api-url/test_search \
+  -H "Content-Type: application/json" \
+  -d '{"use_pregenerated": true}'
 ```
 
 ## 🔒 Security & Configuration
