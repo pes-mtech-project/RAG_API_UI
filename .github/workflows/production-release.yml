@@ -222,18 +222,8 @@ jobs:
           type=raw,value=${{ needs.version-management.outputs.version-tag }}
           type=sha,prefix=prod-
 
-    - name: 🏷️ Generate container metadata for UI
-      id: meta-ui  
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.UI_IMAGE_NAME }}
-        tags: |
-          type=raw,value=latest
-          type=raw,value=prod
-          type=raw,value=${{ needs.version-management.outputs.version }}
-          type=raw,value=${{ needs.version-management.outputs.version-tag }}
-          type=sha,prefix=prod-
-
+    # UI metadata generation removed for production speed
+    
     - name: 🏗️ Build and push API container
       uses: docker/build-push-action@v5
       with:
@@ -247,32 +237,17 @@ jobs:
           BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           GIT_SHA=${{ github.sha }}
 
-    - name: 🏗️ Build and push UI container
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.ui
-        push: true
-        tags: ${{ steps.meta-ui.outputs.tags }}
-        labels: ${{ steps.meta-ui.outputs.labels }}
-        build-args: |
-          VERSION=${{ needs.version-management.outputs.version }}
-          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          GIT_SHA=${{ github.sha }}
-
+    # UI Container build removed for production speed
+    # Use lightweight bootstrap UI or external UI deployment
+    
     - name: 🔓 Make container packages public
       run: |
         echo "🔓 Configuring container package visibility..."
         
-        # Make API package public
+        # Make API package public (UI deployment removed for production speed)
         gh api --method PATCH \
           "/orgs/pes-mtech-project/packages/container/finbert-news-rag-app%2Ffinbert-api" \
           -f visibility=public || echo "⚠️ API package already public or needs manual configuration"
-        
-        # Make UI package public  
-        gh api --method PATCH \
-          "/orgs/pes-mtech-project/packages/container/finbert-news-rag-app%2Ffinbert-ui" \
-          -f visibility=public || echo "⚠️ UI package already public or needs manual configuration"
 
   # ===== DEPLOY TO PRODUCTION =====
   deploy-production:

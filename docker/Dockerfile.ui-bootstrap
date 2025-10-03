@@ -1,0 +1,31 @@
+FROM python:3.9-slim
+
+# Set working directory
+WORKDIR /app
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+
+# Copy requirements and install minimal dependencies
+COPY --chown=appuser:appuser streamlit-bootstrap/requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Copy bootstrap application
+COPY --chown=appuser:appuser streamlit-bootstrap/ .
+
+# Configure Streamlit
+RUN mkdir -p /home/appuser/.streamlit
+RUN echo '[server]\nport = 8501\naddress = "0.0.0.0"\nheadless = true\nenableCORS = false\n[theme]\nbase = "light"\n' > /home/appuser/.streamlit/config.toml
+
+# Switch to non-root user
+USER appuser
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8501/healthz || exit 1
+
+# Expose port
+EXPOSE 8501
+
+# Run streamlit
+CMD ["/home/appuser/.local/bin/streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
