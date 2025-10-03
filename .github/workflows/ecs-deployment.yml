@@ -178,6 +178,16 @@ jobs:
 
     - name: �🚀 Deploy infrastructure with CDK
       working-directory: ./infrastructure
+      env:
+        # Elasticsearch Configuration
+        ES_CLOUD_HOST: ${{ secrets.ES_CLOUD_HOST }}
+        ES_CLOUD_READONLY_KEY: ${{ secrets.ES_CLOUD_READONLY_KEY }}
+        ES_CLOUD_UNRESTRICTED_KEY: ${{ secrets.ES_CLOUD_UNRESTRICTED_KEY }}
+        ES_DOCKER_HOST: ${{ secrets.ES_DOCKER_HOST }}
+        ES_DOCKER_KEY: ${{ secrets.ES_DOCKER_KEY }}
+        # HuggingFace Configuration
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
       run: |
         # Bootstrap CDK if needed (idempotent)
         export CDK_DEFAULT_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}

@@ -357,7 +357,13 @@ async def similarity_search(search_query: SearchQuery):
             index_pattern = "news_finbert_embeddings,*processed*,*news*"
         
         # Try different embedding field names with improved error handling
-        embedding_fields = ["embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding"]
+        # Added more common field names used in production Elasticsearch clusters
+        embedding_fields = [
+            "embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding",
+            "finbert_embedding", "text_embedding", "content_embedding", "doc_embedding",
+            "sentence_transformer_embedding", "st_embedding", "dense_vector", "vec",
+            "finbert_vector", "sentence_vec", "content_vec", "ml_embedding"
+        ]
         search_successful = False
         response = None
         last_error = ""
