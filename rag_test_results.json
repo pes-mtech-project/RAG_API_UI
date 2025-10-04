@@ -1,0 +1,326 @@
+{
+  "Finance": [
+    {
+      "id": "20250924000000-225",
+      "score": 0.7396219,
+      "title": "If You Invested $1000 In M&T Bank Stock 5 Years Ago, You Would Have This Much Today",
+      "summary": "This financial news article discusses market developments and economic implications.  M&T Bank (NYSE:MTB) has outperformed the market over the past 5 years by 1.63% on an annualized basis producing an average annual return of 16.32% . Currently, the bank has a market capitalization of $31.35 billion .",
+      "full_text": "M&T Bank (NYSE:MTB) has outperformed the market over the past 5 years by 1.63% on an annualized basis producing an average annual return of 16.32%. Currently, M&T Bank has a market capitalization of $31.35 billion.\n\nBuying $1000 In MTB: If ...\n\nFull story available on Benzinga.com\n\nThis story appeared on benzinga.com , 2025-09-23 22:30:41.",
+      "url": "https://biztoc.com/x/80e441edc75d10a2",
+      "date": "20250924000000",
+      "published_dt": "2025-09-23T22:30:41+00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250924000000-225",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "ECON_STOCKMARKET"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250910000000-1312",
+      "score": 0.73938614,
+      "title": "91.65 lakh Maharashtra farmers receive \u20b91,892.61 crore under Namo Shetkari Yojana",
+      "summary": "This financial news article discusses market developments and economic implications.  The Maharashtra government released the seventh instalment of the \u2018Namo Shetkari Mahasanman Kisan Yojana\u2019 launched for the financial stability of farmers . A total of \u20b91892.61 crore will be transferred to the bank accounts of 91.65 lakh farmers .",
+      "full_text": "The Maharashtra government released the seventh instalment of the \u2018Namo Shetkari Mahasanman Kisan Yojana\u2019 launched for the financial stability of farmers. A total of \u20b91892.61 crore will be transferred to the bank accounts of 91.65 lakh farmers in the State.\n\nAgriculture Minister Dattatreya Bharne said, \u201cThe scheme enables farmers to meet production costs, making agriculture sustainable. The number of these beneficiaries will increase as it will strengthen the economy of rural areas.\u201d\n\nThe State government launched this scheme on the lines of the Central government\u2019s Pradhan Mantri Kisan Samman Nidhi Yojana. The scheme provides direct financial assistance, where the farmers receive the additional benefit of \u20b96000 per year from the State along with the Centre\u2019s \u20b96000.\n\nThe State Agriculture Department organised the programme to distribute the seventh instalment of funds. Chief Minister Devendra Fadnavis, Deputy Chief Minister Eknath Shinde, Deputy Chief Minister Ajit Pawar, Agriculture M...",
+      "url": "https://www.thehindu.com/news/national/maharashtra/9165-lakh-maharashtra-farmers-receive-189261-crore-under-namo-shetkari-yojana/article70030798.ece",
+      "date": "20250910000000",
+      "published_dt": "2025-09-09T22:21:00+00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250910000000-1312",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "Agriculture Department"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250926000000-390",
+      "score": 0.73456484,
+      "title": "India becomes world\u2019s 3rd largest tech startup: Report",
+      "summary": "This financial news article discusses market developments and economic implications.  Funding for Indian tech startups declined 23 per cent year-on-year to $7.7 billion in the first nine months of 2025 . This sector received $10.1 billion worth of funds in the corresponding period in 2024 and $8.3 billion in 2023 .",
+      "full_text": "India climbed to third position globally in terms of funding for tech startups, trailing only the United States and the United Kingdom but ahead of Germany and France, a report said on Thursday.\n\nFunding for Indian technology startups declined 23 per cent year-on-year to $7.7 billion in the first nine months of 2025, a report from market intelligence platform Tracxn said.\n\nThis sector received $10.1 billion worth of funds in the corresponding period in 2024 and $8.3 billion in 2023.\n\n\u201cIndia climbing to the third rank globally reflects the resilience and adaptability of our startup ecosystem. What we are witnessing is a clear shift toward maturity, with rising acquisitions, steady IPO activity, and continued unicorn creation providing balanced exit pathways for founders and investors,\u201d said Neha Singh, Co-Founder of Tracxn.\n\nSectors such as enterprise applications, retail, and transportation and logistics technologies are driving long-term investor confidence and fuelling India\u2019s digita...",
+      "url": "https://nagalandpost.com/india-becomes-worlds-3rd-largest-tech-startup-report/",
+      "date": "20250926000000",
+      "published_dt": "2025-09-25T20:09:21+00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250926000000-390",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "WB_135_TRANSPORT",
+        "TAX_FNCACT_INVESTOR",
+        "WB_678_DIGITAL_GOVERNMENT",
+        "WB_652_ICT_APPLICATIONS",
+        "WB_658_ENTERPRISE_APPLICATIONS"
+      ],
+      "organizations": []
+    }
+  ],
+  "FMCG": [
+    {
+      "id": "20250910000000-337",
+      "score": 0.750531,
+      "title": "The New MAHA Report Lacks Teeth, Experts Say | TIME",
+      "summary": " The first MAHA report, released in May, mentioned ultra-processed foods more than 40 times, blaming them for negative health outcomes in children . The just-released follow-up action plan outlines the Trump Administration\u2019s strategy for fixing the problems identified by the first report .",
+      "full_text": "The Brief September 10, 2025Trump confronted by protesters in D.C., experts critique the new MAHA report, and morePlay icon00:00Skip backward 15 secondsLength:LongSpeed:1.0xSkip forward 15 secondsTIME AI LogoPowered byScale logoThe first MAHA report, released in May and titled \u201cMake Our Children Healthy Again,\u201d mentioned ultra-processed foods more than 40 times, blaming them for negative health outcomes in children.\u00a0The just-released follow-up action plan, which outlines the Trump Administration\u2019s strategy for fixing the problems identified by the first report, mentions ultra-processed foods only once, pledging that government agencies would continue to try to develop a definition for them.AdvertisementIt\u2019s just one way that the MAHA Strategy Report, released on Sept. 9, disappointed many public health advocates\u2014including some MAHA supporters\u2014who had hoped that Robert F. Kennedy Jr.\u2019s maverick approach to science might upend decades of slow progress on improving nutrition among America...",
+      "url": "https://time.com/7315789/maha-report-strategy-plan-rfk-jr/",
+      "date": "20250910000000",
+      "published_dt": "",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250910000000-337",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "Department Of Health",
+        "Nestle",
+        "York University",
+        "White House",
+        "Commission Make Our Children Healthy Again Strategy"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20251001000000-423",
+      "score": 0.7196821,
+      "title": "Ambewela unveils exclusive premier consumer promotion",
+      "summary": "This financial news article discusses market developments and economic implications.  Sri Lanka\u2019s No. 1 fresh milk brand, Ambewela, has introduced an exclusive consumer promotion that blends daily nourishment with extraordinary experiences . The brand has long been a benchmark for dairy excellence in Sri Lanka, trusted by generations for its uncompromising commitment to quality, purity and nutrition .",
+      "full_text": "From Sri Lanka\u2019s most premium fresh milk to luxury holiday experiences\n\nCEO Sasanka Perera Marketing Group Head Ruwani Dias\n\nAmbewela, has taken its commitment to consumers beyond the breakfast table by introducing an exclusive consumer promotion that blends daily nourishment with extraordinary experiences.\n\n\n\nAmbewela, which is regarded as Sri Lanka\u2019s No. 1 fresh milk brand, has long been a benchmark for dairy excellence in Sri Lanka, trusted by generations for its uncompromising commitment to quality, purity, and nutrition.\n\n\n\nEstablished as the most premium fresh milk brand in the country, Ambewela is produced from its very own farms in the lush hills of Nuwara Eliya, where the finest pastures and advanced farming practices ensure milk of unmatched freshness and taste. Every drop of Ambewela milk embodies the brand\u2019s promise of premium quality, safety, and nourishment, making it a staple in Sri Lankan households.\n\n\n\nStaying true to this heritage of excellence, Ambewela is now reward...",
+      "url": "https://www.ft.lk/business/Ambewela-unveils-exclusive-premier-consumer-promotion/34-782420",
+      "date": "20251001000000",
+      "published_dt": "",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20251001000000-423",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [
+        "IDEOLOGY",
+        "TAX_FOODSTAPLES_MILK",
+        "AGRICULTURE",
+        "GEN_HOLIDAY",
+        "TAX_FNCACT_BUTLER"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250911000000-761",
+      "score": 0.71894526,
+      "title": "SA meat exports reach record $1.64 billion",
+      "summary": "This financial news article discusses market developments and economic implications.  Growth has been recorded across all of the state\u2019s top 15 meat export markets, with increases ranging from 28 to 107 per cent . The top five markets accounted for more than $400 million of the rise . The state government said the record $1.64 billion reflects the success of its diversification strategy .",
+      "full_text": "Image: Dusan Petkovic/stock.adobe.com\n\nSouth Australian meat exports have risen to record levels, increasing by $573 million over the past 12 months to reach $1.64 billion, despite new tariff barriers imposed by the United States.\n\nGrowth has been recorded across all of the state\u2019s top 15 meat export markets, with increases ranging from 28 to 107 per cent. The top five markets accounted for more than $400 million of the rise, with exports to the US up $273 million, South Korea up $60 million, Japan up $34 million, China up $17 million and Malaysia up $22 million. Together, these markets represented $1.17 billion in meat exports over the year.\n\nThe state government said the record $1.64 billion reflect the success of its diversification strategy, with 15 markets each importing more than $20 million of South Australian meat. Through the Department of State Development, 582 South Australian businesses took part in outbound and inbound trade missions in the last financial year.\n\nTrade and ...",
+      "url": "https://www.foodmag.com.au/sa-meat-exports-reach-record-1-64-billion/",
+      "date": "20250911000000",
+      "published_dt": "2025-09-11T09:00:25+10:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250911000000-761",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [
+        "Department Of State Development",
+        "United States"
+      ],
+      "organizations": []
+    }
+  ],
+  "Automotive": [
+    {
+      "id": "20250917000000-362",
+      "score": 0.7789649,
+      "title": "Five-star small car meets a new factory \u2014 A surf-themed EV readies its next wave",
+      "summary": "This financial news article discusses market developments and economic implications.  An exciting electric vehicle (EV) has been produced by a Chinese automaker . It is the perfect export providing affordable, sustainable mobility with a playful look . Younger drivers in an urban setting are at the forefront of this compact and efficient offering .",
+      "full_text": "Compact cars are riding a new wave all the way to European markets. An exciting electric vehicle (EV) has been produced by a Chinese automaker, and it is the perfect export providing affordable, sustainable mobility with a playful look. As the world moves towards cleaner energy options, automakers are rising to the occasion.\n\nWhat this new compact EV from China looks like\n\nThis car is a quirky symbol representing China\u2019s serious intent when it comes to its automotive exports to Europe. Styled in a surfer motif. It has an array of bold colors on offer, and a sassy air to it. Custom interior trims and distinctive stitching with a new focus on the wheels being added, look to see this car make an impact.\n\nYounger drivers in an urban setting are at the forefront of this compact and efficient offering. A car with a lifestyle element attached to it provides an allure, and this brand has tapped into that while boasting a five-star Euro NCAP safety rating.\n\nWhich Chinese brand is looking to imp...",
+      "url": "https://www.ecoportal.net/en/five-star-small-car-ev-next-wave-europe/12974/",
+      "date": "20250917000000",
+      "published_dt": "2025-09-16T15:50:42-04:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250917000000-362",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [
+        "PROTEST",
+        "SCIENCE",
+        "SOC_INNOVATION",
+        "UNGP_FORESTS_RIVERS_OCEANS",
+        "TAX_WORLDMAMMALS_DOLPHIN"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250924000000-446",
+      "score": 0.76567256,
+      "title": "Vehicle Electrification Market worth $83.87 billion by 2032, Globally, at a CAGR Of 7.1%, Says MarketsandMarkets\u2122",
+      "summary": "This financial news article discusses market developments and economic implications.  The global Vehicle Electrification Market is forecast to grow from USD 51.84 billion in 2025 to USD 83.87 billion by 2032 at a CAGR of 7.1% . Vehicle electrification is accelerating across internal combustion engines (ICE) & mild hybrids, HEVs, PHEVs, and BEVs .",
+      "full_text": "Delray Beach, FL, Sept. 23, 2025 (GLOBE NEWSWIRE) -- The global Vehicle Electrification Market is forecast to grow from USD 51.84 billion in 2025 to USD 83.87 billion by 2032 at a CAGR of 7.1%, as per the recent study by MarketsandMarkets\u2122. Vehicle electrification is accelerating across internal combustion engines (ICE) & mild hybrids, HEVs, PHEVs, and BEVs, with a major shift from mechanically driven auxiliaries to electric systems to enhance efficiency, increase vehicle performance, and support advanced systems such as ADAS. Enhanced thermal management is evolving with electric water, oil, and vacuum pumps in mild hybrids, BEVs, PHEVs, and HEVs for optimized cooling and brake systems, supporting the growing installation of vehicle electrification components market.\n\nVehicle electrification is accelerating across internal combustion engines (ICE) & mild hybrids, HEVs, PHEVs, and BEVs, with a major shift from mechanically driven auxiliaries to electric systems to enhance efficiency, in...",
+      "url": "https://www.globenewswire.com/news-release/2025/09/23/3155142/0/en/Vehicle-Electrification-Market-worth-83-87-billion-by-2032-Globally-at-a-CAGR-Of-7-1-Says-MarketsandMarkets.html",
+      "date": "20250924000000",
+      "published_dt": "2025-09-23T00:00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250924000000-446",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [],
+      "organizations": []
+    },
+    {
+      "id": "20250911000000-988",
+      "score": 0.75710857,
+      "title": "China\u2019s car market is too big for its own good",
+      "summary": "This financial news article discusses market developments and economic implications.  Around 150 different brands producing passenger vehicles in China, of which about 130 make electric vehicles . Show of force is a sign that some 20 years after the Chinese car industry kicked into high gear, the sector is now looking for new markets because it\u2019s too large and unwieldy at h .",
+      "full_text": "THE evolution of the American auto industry holds an important lesson for Chinese carmakers\u2019 deep-pocketed financial backers: Let go and allow the chips to fall where they may.\n\nThat message should resonate with the hundreds of thousands of car enthusiasts at the Munich auto show this week.\n\nThey\u2019ll be coming face to face with a 100-strong contingent of Chinese automakers and suppliers ready to elbow each other aside to increase sales in Europe.\n\nToday there are about 150 different brands producing passenger vehicles in China, according to consulting firm AlixPartners, of which about 130 make electric vehicles (EVs).\n\nThe biggest homegrown names are BYD Co, Geely Automobile Holdings Ltd, and Chongqing Changan Automobile Co.\n\nThis show of force is not just another reminder of their undeniable technical prowess and growing global dominance.\n\nIt\u2019s also a sign that some 20 years after the Chinese car industry kicked into high gear, the sector is now looking for new markets because it\u2019s too...",
+      "url": "https://www.thestar.com.my/business/insight/2025/09/11/chinas-car-market-is-too-big-for-its-own-good",
+      "date": "20250911000000",
+      "published_dt": "2025-09-11T00:00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250911000000-988",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "Motors Co",
+        "Chrysler",
+        "United States",
+        "Bloomberg",
+        "Tesla Inc"
+      ],
+      "organizations": []
+    }
+  ],
+  "Energy": [
+    {
+      "id": "20250927000000-876",
+      "score": 0.75153303,
+      "title": "Cutting Russian oil crucial for India-US trade pact, say US officials",
+      "summary": "This financial news article discusses market developments and economic implications.  US trade officials have informed their Indian counterparts that cutting back on Russian oil imports is key to lowering India\u2019s tariff rates and finalising a trade agreement . US President Donald Trump has sought to pressure India, the European Union and members of NATO to curb purchases of Russian oil .",
+      "full_text": "A model of oil barrels is seen in front of Russian and Indian flags in this illustration taken, December 9, 2022. \u2014 Reuters\n\nUS trade officials have informed their Indian counterparts that cutting back on Russian oil imports is key to lowering India\u2019s tariff rates and finalising a trade agreement, sources familiar with the talks told Reuters.\n\nA US official said the trade discussions are moving in a positive direction, but more effort is needed. The official highlighted that India still needs to address US concerns on market access, the trade deficit, and its Russian oil purchases.\n\nUS President Donald Trump has sought to pressure India, the European Union and members of NATO to curb purchases of Russian oil as a way to cut Moscow\u2019s revenue and hasten an end to the war in Ukraine.\n\nThe Trump administration has shown a willingness to use maximum leverage to advance its policy goals, as evidenced by its linking trade negotiations with India to demands that it curb Russian oil purchases.\n...",
+      "url": "https://www.thenews.com.pk/latest/1346626-cutting-russian-oil-crucial-for-india-us-trade-pact-say-us-officials",
+      "date": "20250927000000",
+      "published_dt": "2025-09-27T04:30:06+05:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250927000000-876",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "TAX_FNCACT_OFFICIALS",
+        "ARMEDCONFLICT",
+        "EPU_CATS_NATIONAL_SECURITY",
+        "SANCTIONS",
+        "TAX_ETHNICITY_RUSSIAN"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20251001000000-228",
+      "score": 0.7442494,
+      "title": "Petrol, diesel prices increased again in Pakistan \u2013 The Frontier Post",
+      "summary": "This financial news article discusses market developments and economic implications.  Petrol, diesel prices increased again in Pakistan after an increase of Rs 4.7 per liter . The price of petrol has increased from Rs 264.61 to Rs 268.68.68 . The prices will be applicable from midnight today and will remain applicable for next 15 days .",
+      "full_text": "Petrol, diesel prices increased again in Pakistan\n2 days agoby The Frontier Post\n\n\n\n\n\nF.P. Report\nISLAMABAD: The Ministry of Finance has issued a notification regarding the increase in the prices of petroleum products, according to which the price of petrol has been increased by Rs 4.7 per liter.\nAfter the price increase, the price of petrol has increased from Rs 264.61 to Rs 268.68.\nAccording to the notification, the price of high-speed diesel has increased from Rs 272.77 to Rs 276.81 after an increase of Rs 4.4.\nAccording to the notification from the Ministry of Finance, the prices will be applicable from midnight today and these prices will remain applicable for the next 15 days.\n\n\n\n\n\n\n\nFacebookXGoogle+PinterestLinkedIn Business\nUS stocks drift near their records as tech keeps... Business\nECC approves key supplementary grants and trade... Business\nPSX gains 2,849 points to close at 168,489 Business\nGold price drops by Rs2,500 to Rs407,778 per tola Business\nFinance Minister Aurangzeb...",
+      "url": "https://thefrontierpost.com/petrol-diesel-prices-increased-again-in-pakistan/",
+      "date": "20251001000000",
+      "published_dt": "",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20251001000000-228",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "EPU_POLICY_MINISTRY_OF_FINANCE",
+        "TAX_ECON_PRICE",
+        "ECON_GASOLINEPRICE"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250919000000-1111",
+      "score": 0.7402894,
+      "title": "Transition to Renewables is a Globalist Suicide Pact For the Rest of Us",
+      "summary": " The world\u2019s 825 operational oil refineries are processing more than 100 million barrels a day of crude oil . 80% of the global population of 8 billion people are living on less than $10 per day . The products and fuels processed from crude oil through refineries that sit on vast acreage sites, are the foundation of longer, healthier lives .",
+      "full_text": "By Ronald Stein, PE\n\nSeptember 19, 2025\n\nJUST electricity generated from wind and solar, will negatively impact humanity demands for the products based on fossil fuels.\n\nEven though about 80% of the global population of 8 billion people are living on less than $10 per day, the world\u2019s 825 operational oil refineries are processing more than 100 million barrels a day of crude oil to support the thousands of products and transportation fuels demanded by humanity on this planet.\n\nThe zero-emission movement has the delusion that JUST electricity generated from wind and solar can replace refineries and the crude oil that they process to support the variety of products and fuels in our materialistic society.\n\nThe products and fuels processed from crude oil through refineries that sit on vast acreage sites, are the foundation of longer, healthier lives.\n\nIn 1900, the average life expectancy was 32 years; by 2021, it had more than doubled to 71 years. Today, it exceeds 75 years. The growing med...",
+      "url": "https://newswithviews.com/transition-to-renewables-is-a-globalist-suicide-pact-for-the-rest-of-us/",
+      "date": "20250919000000",
+      "published_dt": "2025-09-18T19:40:50-04:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250919000000-1111",
+      "sentiment": {
+        "label": "positive",
+        "score": 0.0
+      },
+      "themes": [
+        "SOC_POINTSOFINTEREST_HOSPITALS",
+        "UNGP_FORESTS_RIVERS_OCEANS",
+        "WB_643_AGING_POPULATION",
+        "ECON_ELECTRICALGENERATION",
+        "SHORTAGE"
+      ],
+      "organizations": []
+    }
+  ],
+  "IT": [
+    {
+      "id": "20250911000000-1156",
+      "score": 0.7766832,
+      "title": "Argentum AI Launches Secure Cross-Border Compute Marketplace for Enterprises",
+      "summary": "This financial news article discusses market developments and economic implications.  Argentum AI (AAI) has unveiled a new decentralized computing platform aimed at bridging the gap between surging global demand for AI computation and the vast reserves of idle computing capacity around the world . By connecting those in need of processing power with those who can supply it, AAI promises to dramatically reduce costs by up to 85% compared to traditional cloud providers .",
+      "full_text": "Argentum AI (AAI) has unveiled a new decentralized computing platform aimed at bridging the gap between surging global demand for AI computation and the vast reserves of idle computing capacity around the world. By directly connecting those in need of processing power with those who can supply it, AAI promises to dramatically reduce costs by up to 85% compared to traditional cloud providers while fostering a transparent, community-driven ecosystem for cloud infrastructure.\n\nIn today's cloud computing market, a handful of providers dominate, leading to exorbitant prices, hardware shortages, and underutilized resources. AI startups and researchers often struggle to access affordable high-performance compute, even as many servers and GPUs sit idle in data centers and homes. This mismatch between soaring demand and unused supply has created an inefficient, fractured market where buyers overpay or go without, and hardware owners see expensive machines sit idle. AAI was conceived to solve th...",
+      "url": "http://www.hawaiitelegraph.com/news/278566860/argentum-ai-launches-secure-cross-border-compute-marketplace-for-enterprises",
+      "date": "20250911000000",
+      "published_dt": "",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250911000000-1156",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [],
+      "organizations": []
+    },
+    {
+      "id": "20250910000000-947",
+      "score": 0.738263,
+      "title": "Politicians love comparing NZ's economy to Singapore or Ireland",
+      "summary": "This financial news article discusses market developments and economic implications.  Amazon Web Services' long-awaited NZ$7.5 billion \"cloud region\" is a cluster of local data centres . Prime Minister Christopher Luxon referenced Ireland and Singapore as \"two economies we often look to for inspiration on investment and technology\" New Zealand does not sit at the junction of the European Union and the United States .",
+      "full_text": "Share article\n\nPrint article\n\nUnveiling Amazon Web Services' long-awaited NZ$7.5 billion \"cloud region\" - a cluster of local data centres - Prime Minister Christopher Luxon specifically referenced Ireland and Singapore as \"two economies we often look to for inspiration on investment and technology\".\n\nThis kind of comparison has been a familiar refrain in New Zealand politics. More than a decade ago, then prime minister John Key imagined the country as the \"Switzerland of the South Pacific\".\n\nEarlier this year, Luxon described his proposed Invest New Zealand agency as being \"modelled off the success of Ireland and Singapore\", pitched as a \"concierge\" service for large foreign investors.\n\nBut based on my research on how big-tech cloud providers expand and dominate markets across the globe, I argue such comparisons are simplistic and misleading.\n\nUnlike Ireland, New Zealand does not sit at the junction of the European Union and the United States. And it is not a logistics-finance hub stra...",
+      "url": "http://www.irishsun.com/news/278563764/politicians-love-comparing-nz-economy-to-singapore-or-ireland-but-it-simplistic-and-misleading",
+      "date": "20250910000000",
+      "published_dt": "",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250910000000-947",
+      "sentiment": {
+        "label": "negative",
+        "score": 0.0
+      },
+      "themes": [
+        "Amazon Web Service",
+        "Google",
+        "Ministry Of Health",
+        "United States",
+        "European Union"
+      ],
+      "organizations": []
+    },
+    {
+      "id": "20250902000000-756",
+      "score": 0.7340773,
+      "title": "India White-Collar Hiring Rises 3% in August Led by Non-IT Sectors",
+      "summary": "No summary available",
+      "full_text": "\"Non-IT sectors made a significant contribution to this growth, with the insurance sector contributing 24 per cent, followed by hospitality/travel (22 per cent), BPO/ITES (17 per cent), education (16 per cent), and real estate (18 per cent),\" Naukri, a leading job posting platform, said in a report.\n\nHowever, the IT sector declined by 6 per cent YoY, but IT unicorns bucked the trend with a 10 per cent YoY growth in hiring.\n\n\"Hiring rose at both ends of the experience spectrum in August, with freshers up 7 per cent YoY and seasoned professionals (16 yrs) up 8 per cent YoY,\" the report stated.\n\nMeanwhile, hiring for AI-ML roles surged 54 per cent YoY in August, continuing the strong momentum observed in recent months.\n\nThe upswing spanned across metros, with Kolkata (101 per cent) and Hyderabad (80 per cent) leading the pack, followed closely by Delhi-NCR (72 per cent) and Chennai (67 per cent), the report suggested.\n\nAccording to the report, the hospitality sector recorded a 22 per cent...",
+      "url": "https://www.newkerala.com/news/o/white-collar-hiring-grew-pc-august-non-it-sectors-top-contributors-120",
+      "date": "20250902000000",
+      "published_dt": "2025-09-01T21:30:08+00:00",
+      "rag_doc_url": "https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id=20250902000000-756",
+      "sentiment": {
+        "label": "neutral",
+        "score": 0.0
+      },
+      "themes": [],
+      "organizations": []
+    }
+  ]
+}

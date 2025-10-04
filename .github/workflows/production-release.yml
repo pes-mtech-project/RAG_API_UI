@@ -281,16 +281,6 @@ jobs:
         npm install -g aws-cdk@latest
 
     - name: 🚀 Deploy infrastructure & application
-      env:
-        # Elasticsearch Configuration
-        ES_CLOUD_HOST: ${{ secrets.ES_CLOUD_HOST }}
-        ES_CLOUD_READONLY_KEY: ${{ secrets.ES_CLOUD_READONLY_KEY }}
-        ES_CLOUD_UNRESTRICTED_KEY: ${{ secrets.ES_CLOUD_UNRESTRICTED_KEY }}
-        ES_DOCKER_HOST: ${{ secrets.ES_DOCKER_HOST }}
-        ES_DOCKER_KEY: ${{ secrets.ES_DOCKER_KEY }}
-        # HuggingFace Configuration
-        HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
       run: |
         cd infrastructure
         
@@ -298,9 +288,9 @@ jobs:
         
         echo "🚀 Deploying FinBERT RAG v$VERSION to production..."
         echo "📦 API Image: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:$VERSION"
-        echo "� Using Elasticsearch configuration from GitHub secrets"
+        echo "📦 UI Image: ${{ env.REGISTRY }}/${{ env.UI_IMAGE_NAME }}:$VERSION"
         
-        # Deploy with version-specific image tags and environment configuration
+        # Deploy with version-specific image tags
         npx cdk deploy FinBertRagProdStack \
           --require-approval never \
           --context apiImageTag="$VERSION" \

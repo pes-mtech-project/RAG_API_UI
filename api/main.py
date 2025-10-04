@@ -357,13 +357,7 @@ async def similarity_search(search_query: SearchQuery):
             index_pattern = "news_finbert_embeddings,*processed*,*news*"
         
         # Try different embedding field names with improved error handling
-        # Added more common field names used in production Elasticsearch clusters
-        embedding_fields = [
-            "embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding",
-            "finbert_embedding", "text_embedding", "content_embedding", "doc_embedding",
-            "sentence_transformer_embedding", "st_embedding", "dense_vector", "vec",
-            "finbert_vector", "sentence_vec", "content_vec", "ml_embedding"
-        ]
+        embedding_fields = ["embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding"]
         search_successful = False
         response = None
         last_error = ""
@@ -387,35 +381,18 @@ async def similarity_search(search_query: SearchQuery):
         
         for embedding_field in embedding_fields:
             try:
-                # Build search query with improved error handling
-                search_body = {
+                # Method 1: Try k-NN search first (compatible with readonly clusters)
+                knn_query = {
+                    "field": embedding_field,
+                    "query_vector": query_embedding,
+                    "k": min(search_query.limit * 3, 100),  # Get more candidates for better results
+                    "num_candidates": min(search_query.limit * 20, 500),
+                    "boost": 1.0
+                }
+                
+                search_body_knn = {
                     "size": search_query.limit,
-                    "min_score": max(0.1, search_query.min_score),  # Ensure minimum threshold
-                    "query": {
-                        "bool": {
-                            "should": [
-                                {
-                                    "script_score": {
-                                        "query": {"match_all": {}},
-                                        "script": {
-                                            "source": f"""
-                                                if (doc['{embedding_field}'].size() == 0) {{
-                                                    return 0;
-                                                }}
-                                                try {{
-                                                    return cosineSimilarity(params.query_vector, '{embedding_field}') + 1.0;
-                                                }} catch (Exception e) {{
-                                                    return 0;
-                                                }}
-                                            """,
-                                            "params": {"query_vector": query_embedding}
-                                        }
-                                    }
-                                }
-                            ],
-                            "minimum_should_match": 1
-                        }
-                    },
+                    "knn": knn_query,
                     "_source": [
                         "news_title", "news_summary", "news_body", "url", "date", 
                         "v2_themes", "v1_themes", "v2_organizations", "v1_organizations",
@@ -423,7 +400,7 @@ async def similarity_search(search_query: SearchQuery):
                     ]
                 }
                 
-                # Add date range filter if specified
+                # Add date filter to k-NN if specified
                 if search_query.date_from or search_query.date_to:
                     date_filter = {"range": {"date": {}}}
                     if search_query.date_from:
@@ -431,18 +408,73 @@ async def similarity_search(search_query: SearchQuery):
                     if search_query.date_to:
                         date_filter["range"]["date"]["lte"] = search_query.date_to
                     
-                    if "filter" not in search_body["query"]["bool"]:
-                        search_body["query"]["bool"]["filter"] = []
-                    search_body["query"]["bool"]["filter"].append(date_filter)
+                    search_body_knn["query"] = {
+                        "bool": {
+                            "filter": [date_filter]
+                        }
+                    }
                 
-                # Execute search with this embedding field
-                response = es.search(index=index_pattern, body=search_body, timeout="30s")
-                if response and response["hits"]["hits"]:  # If we got results
-                    search_successful = True
-                    logger.info(f"Search successful using embedding field: {embedding_field}")
-                    break
-                else:
-                    logger.info(f"No results found for embedding field: {embedding_field}")
+                logger.info(f"Attempting k-NN search with field '{embedding_field}'")
+                
+                try:
+                    response = es.search(index=index_pattern, body=search_body_knn, timeout="30s")
+                    if response and response["hits"]["hits"]:
+                        search_successful = True
+                        logger.info(f"✅ k-NN search successful using embedding field: {embedding_field}")
+                        logger.info(f"Found {len(response['hits']['hits'])} results")
+                        break
+                    else:
+                        logger.warning(f"k-NN search returned no results for field '{embedding_field}'")
+                except Exception as knn_error:
+                    logger.warning(f"❌ k-NN search failed for field '{embedding_field}': {knn_error}")
+                
+                # Method 2: Try dense_vector match if k-NN not supported
+                try:
+                    search_body_dense = {
+                        "size": search_query.limit,
+                        "query": {
+                            "bool": {
+                                "must": [
+                                    {
+                                        "exists": {
+                                            "field": embedding_field
+                                        }
+                                    }
+                                ],
+                                "should": [
+                                    {
+                                        "function_score": {
+                                            "query": {"match_all": {}},
+                                            "functions": [
+                                                {
+                                                    "field_value_factor": {
+                                                        "field": "_score",
+                                                        "factor": 1.0,
+                                                        "missing": 0.1
+                                                    }
+                                                }
+                                            ],
+                                            "score_mode": "sum"
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        "_source": [
+                            "news_title", "news_summary", "news_body", "url", "date", 
+                            "v2_themes", "v1_themes", "v2_organizations", "v1_organizations",
+                            "author", "source_common_name", "published_dt", "embedding_model"
+                        ]
+                    }
+                    
+                    response = es.search(index=index_pattern, body=search_body_dense, timeout="30s")
+                    if response and response["hits"]["hits"]:
+                        search_successful = True
+                        logger.info(f"✅ Dense vector search successful using embedding field: {embedding_field}")
+                        break
+                except Exception as dense_error:
+                    logger.warning(f"❌ Dense vector search failed for field '{embedding_field}': {dense_error}")
+
                     
             except Exception as e:
                 error_msg = str(e)

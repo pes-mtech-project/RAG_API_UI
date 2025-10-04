@@ -10,8 +10,8 @@ import time
 from typing import Dict, List, Any
 
 # Configuration
-API_BASE_URL = "http://finber-finbe-mlc1emju4jnw-1497871200.ap-south-1.elb.amazonaws.com"
-# API_BASE_URL = "http://localhost:8000"  # Use this for local testing
+# API_BASE_URL = "http://finber-finbe-mlc1emju4jnw-1497871200.ap-south-1.elb.amazonaws.com"
+API_BASE_URL = "http://localhost:8000"  # Use this for local testing
 
 def test_health_check():
     """Test the health endpoint"""

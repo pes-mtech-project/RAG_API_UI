@@ -1,21 +1,35 @@
 # FinBERT News RAG App — Copilot Instructions
 
 ## Project Overview
-This is a multi-service, containerized RAG (Retrieval-Augmented Generation) system for financial news, built with FastAPI (API), Streamlit (UI), and deployed via AWS ECS Fargate. CI/CD is automated using GitHub Actions, with images stored in GitHub Container Registry (GHCR).
+This is a **modular, production-ready** RAG (Retrieval-Augmented Generation) system for financial news, built with **SOLID principles**. Features multi-dimensional embedding search, persistent model caching, and comprehensive performance optimization. Deployed via AWS ECS Fargate with automated CI/CD.
 
-## Architecture & Service Boundaries
-- **API**: FastAPI app (`api/`), exposes REST endpoints, containerized via `docker/Dockerfile.api`.
-- **UI**: Streamlit app (`streamlit/`), containerized via `docker/Dockerfile.ui`.
-- **Infrastructure**: AWS CDK (TypeScript, `infrastructure/`), manages ECS clusters, ALB, scaling, networking.
-- **Data Layer**: Elasticsearch (GCP Cloud, external), accessed via API.
-- **Deployment**: Docker Compose for local/dev, ECS Fargate for prod/dev environments.
+## **🏗️ Enhanced Modular Architecture** 
+- **API**: Modular FastAPI app (`api/app/`) with service layer, multiple embedding endpoints, model caching
+- **Entry Point**: `startup.py` with model preloading (not `main.py`)
+- **Service Layer**: ElasticsearchService, EmbeddingService, SearchService, ModelPreloader
+- **Routers**: search.py (new endpoints), legacy.py (backward compatibility)
+- **Models**: Pydantic schemas for request/response validation
+- **UI**: Enhanced Streamlit app (`streamlit/`) with multi-endpoint support
+- **Infrastructure**: AWS CDK (TypeScript, `infrastructure/`) for ECS clusters, ALB, scaling
+- **Data Layer**: Elasticsearch (GCP Cloud) with k-NN vector search (8.x optimized)
+- **Deployment**: Docker Compose for local/dev, ECS Fargate for prod/dev environments
 
-## Developer Workflows
-- **Local Development**:
-	- Start all services: `docker-compose up --build`
-	- API only: `cd api && uvicorn main:app --reload`
+## **🚀 NEW: Multi-Dimensional Embedding Endpoints**
+- **`/search/cosine/embedding384d/`**: Fast search (all-MiniLM-L6-v2, 384d)
+- **`/search/cosine/embedding768d/`**: Balanced search (all-mpnet-base-v2, 768d) 
+- **`/search/cosine/embedding1155d/`**: Enhanced search (384d+768d+3d sentiment)
+- **`/health`**: System status with model cache information
+
+## **🔧 Enhanced Developer Workflows**
+- **Local Development** (With Model Caching):
+	- Start optimized services: `docker-compose up --build` 
+	- API only (modular): `cd api && python startup.py` (NOT `uvicorn main:app`)
 	- UI only: `cd streamlit && streamlit run app.py`
-	- Separate UI for dev: `./run-ui-separately.sh [API_HOST] [API_PORT]`
+	- Test new endpoints: `curl -X POST http://localhost:8000/search/cosine/embedding384d/`
+- **Performance Testing**:
+	- Exhaustive test suite: `python test_exhaustive_api.py` (138 requests)
+	- Model caching validation: `python test_model_caching.py`
+	- Load testing: Multiple concurrent curl requests
 - **Build & Deploy**:
 	- Build containers: `./scripts/build.sh latest`
 	- Deploy local: `./scripts/deploy-local.sh`
@@ -23,7 +37,7 @@ This is a multi-service, containerized RAG (Retrieval-Augmented Generation) syst
 - **Diagnostics & Maintenance**:
 	- Dev instance: `./archive/diagnose-dev-instance.sh`, `./archive/restart-dev-instance.sh`
 	- Prod instance: `./archive/diagnose-instance.sh`, `./archive/restart-instance.sh`
-	- SSH test: `./archive/test-ssh-dev.sh` or `./archive/test-ssh.sh`
+	- Model cache check: `docker exec finbert-api ls ~/.cache/sentence_transformers/`
 
 ## CI/CD & Branching
 - **Production**: `main` branch → full stack deploy to prod ECS
@@ -43,24 +57,40 @@ This is a multi-service, containerized RAG (Retrieval-Augmented Generation) syst
 - **GHCR**: All container images pushed/pulled from GitHub Container Registry
 - **AWS**: ECS, ALB, CloudWatch, IAM, VPC, Security Groups managed via CDK
 
-## Key Files & Directories
-- `api/`, `streamlit/`: Service source code
+## **📁 Enhanced File Structure**
+- `api/app/`: Modular FastAPI application
+  - `startup.py`: Application entry point with model preloading
+  - `main.py`: FastAPI factory function
+  - `services/`: Service layer (ElasticsearchService, EmbeddingService, SearchService)
+  - `routers/`: API endpoints (search.py, legacy.py)  
+  - `models/`: Pydantic request/response schemas
+- `streamlit/`: Enhanced UI with multi-endpoint support
 - `docker/`: Dockerfiles for all containers
-- `infrastructure/`: AWS CDK code, deployment scripts
-- `archive/`: Diagnostic and maintenance scripts
-- `scripts/`: Build/deploy scripts
-- `.env.example`: Environment variable template
+- `tests/`: Comprehensive testing suite
+  - `test_exhaustive_api.py`: 138-request performance validation
+  - `test_model_caching.py`: Model caching verification
+- `infrastructure/`: AWS CDK deployment code
+- `PERFORMANCE_REPORT.md`: Detailed performance analysis
+- `.env.example`: Environment template with model cache paths
 
-## Example: Health Check Pattern
-All containers expose `/health` endpoint for ALB/ECS health checks. See `main.py` (API) and `app.py` (UI) for implementation.
+## **🎯 Performance Standards**
+- **Response Time Target**: < 0.5s average across all endpoints
+- **Success Rate**: 100% under normal load
+- **Model Caching**: No downloads after initial load (4.9x speedup achieved)
+- **Concurrent Load**: > 4 requests/second sustained throughput
 
-## Example: Automated Deployment
-On push to `main` or `develop`, GitHub Actions build containers, push to GHCR, and trigger ECS/CDK deployment. See workflow logs for status.
+## **🔍 Debugging Patterns**
+- **Model Download Issues**: Check `~/.cache/sentence_transformers/` persistence
+- **Performance Issues**: Use `time curl` for response time validation
+- **Service Issues**: Check `docker logs finbert-api` for startup errors
+- **Health Checks**: `/health` endpoint shows system status and model cache info
 
-## Troubleshooting
-- Use diagnostic scripts in `archive/` for instance/container issues
-- Check CloudWatch logs for ECS task/container failures
-- Use `npm run diff` in `infrastructure/` to view pending CDK changes
+## **🚀 Recent Major Changes (October 2025)**
+- **BREAKING**: Entry point changed from `main.py` to `startup.py`
+- **NEW**: Three embedding endpoints (384d, 768d, 1155d dimensions)
+- **PERFORMANCE**: Persistent model caching eliminates downloads
+- **ARCHITECTURE**: Complete modular refactor following SOLID principles
+- **TESTING**: Comprehensive 138-request validation suite implemented
 
 ---
 **For unclear or missing patterns, ask the user for clarification.**

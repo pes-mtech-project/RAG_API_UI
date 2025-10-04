@@ -18,6 +18,7 @@ services:
     volumes:
       - ./.env:/app/.env
       - ./models:/app/models
+      - models_cache:/app/models/sentence_transformers
     networks:
       - finbert-network
     healthcheck:

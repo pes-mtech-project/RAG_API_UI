@@ -99,22 +99,6 @@ export class FinBertRagStack extends cdk.Stack {
                     'API_HOST': '0.0.0.0',
                     'API_PORT': props.containerPort.toString(),
                     'ENVIRONMENT': props.environment,
-                    // Elasticsearch Configuration from GitHub Secrets
-                    'ES_CLOUD_HOST': process.env.ES_CLOUD_HOST || '',
-                    'ES_CLOUD_READONLY_KEY': process.env.ES_CLOUD_READONLY_KEY || '',
-                    'ES_CLOUD_UNRESTRICTED_KEY': process.env.ES_CLOUD_UNRESTRICTED_KEY || '',
-                    'ES_DOCKER_HOST': process.env.ES_DOCKER_HOST || '',
-                    'ES_DOCKER_KEY': process.env.ES_DOCKER_KEY || '',
-                    // Set active configuration based on environment
-                    'ES_READONLY_HOST': props.environment === 'prod' ? 
-                        (process.env.ES_CLOUD_HOST || '') : (process.env.ES_DOCKER_HOST || ''),
-                    'ES_READONLY_KEY': props.environment === 'prod' ? 
-                        (process.env.ES_CLOUD_READONLY_KEY || '') : (process.env.ES_DOCKER_KEY || ''),
-                    'ES_UNRESTRICTED_KEY': props.environment === 'prod' ? 
-                        (process.env.ES_CLOUD_UNRESTRICTED_KEY || '') : (process.env.ES_DOCKER_KEY || ''),
-                    // HuggingFace Configuration
-                    'HF_TOKEN': process.env.HF_TOKEN || '',
-                    'HUGGINGFACE_TOKEN': process.env.HUGGINGFACE_TOKEN || '',
                 },
             },
 
