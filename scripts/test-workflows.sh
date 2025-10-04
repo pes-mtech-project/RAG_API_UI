@@ -68,7 +68,7 @@ echo ""
 print_header "📦 2. DOCKER CONFIGURATION VALIDATION"
 echo ""
 
-run_test "Docker files exist" "[[ -f 'docker/Dockerfile.api' && -f 'docker/Dockerfile.ui' ]]"
+run_test "Docker files exist" "[[ -f 'docker/Dockerfile.api' ]]"
 run_test "Docker compose files exist" "[[ -f 'docker-compose.yml' ]]"
 run_test "Docker tag validation" "./scripts/validate-docker-tags.sh"
 

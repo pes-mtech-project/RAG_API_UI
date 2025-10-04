@@ -35,26 +35,11 @@ else
 fi
 
 echo ""
-
-# Build UI container
-echo -e "${YELLOW}🏗️ Building UI container...${NC}"
-docker build -f docker/Dockerfile.ui -t "$REGISTRY/$NAMESPACE/finbert-ui:$TAG" .
-
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}✅ UI container built successfully${NC}"
-else
-    echo -e "${RED}❌ UI container build failed${NC}"
-    exit 1
-fi
-
-echo ""
-echo -e "${GREEN}🎉 All containers built successfully!${NC}"
+echo -e "${GREEN}🎉 API container built successfully!${NC}"
 echo ""
 echo -e "${BLUE}📋 Built Images:${NC}"
 echo "• $REGISTRY/$NAMESPACE/finbert-api:$TAG"
-echo "• $REGISTRY/$NAMESPACE/finbert-ui:$TAG"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo "1. Test locally: ./scripts/deploy-local.sh"
 echo "2. Push to registry: docker push $REGISTRY/$NAMESPACE/finbert-api:$TAG"
-echo "3. Push to registry: docker push $REGISTRY/$NAMESPACE/finbert-ui:$TAG"

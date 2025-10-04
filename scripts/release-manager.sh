@@ -251,7 +251,6 @@ show_deployment_status() {
     # Show container images
     print_info "Latest container images:"
     echo "📦 API: ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-api"
-    echo "📦 UI: ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-ui"
 }
 
 show_help() {

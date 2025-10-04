@@ -2,7 +2,7 @@ name: Production Release
 
 on:
   push:
-    branches: [ main ]
+    branches: [ live ]
     tags: [ 'v*.*.*' ]  # Semantic versioning tags (e.g., v1.2.3)
   workflow_dispatch:
     inputs:
@@ -27,7 +27,6 @@ on:
 env:
   REGISTRY: ghcr.io
   API_IMAGE_NAME: pes-mtech-project/finbert-news-rag-app/finbert-api
-  UI_IMAGE_NAME: pes-mtech-project/finbert-news-rag-app/finbert-ui
   AWS_REGION: ap-south-1
   PROD_CLUSTER_NAME: finbert-rag-prod
 
@@ -52,7 +51,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.MYGITHUB_TOKEN }}
 
     - name: 🏷️ Determine version and tagging strategy
       id: version
@@ -146,12 +145,6 @@ jobs:
           exit 1
         fi
         
-        # Check Dockerfile.ui exists and is valid
-        if [[ ! -f "docker/Dockerfile.ui" ]]; then
-          echo "❌ docker/Dockerfile.ui not found"
-          exit 1
-        fi
-        
         echo "✅ Docker files validated"
 
     - name: 🔍 Validate infrastructure code
@@ -208,25 +201,13 @@ jobs:
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ secrets.MYGITHUB_TOKEN }}
 
     - name: 🏷️ Generate container metadata for API
       id: meta-api
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}
-        tags: |
-          type=raw,value=latest
-          type=raw,value=prod
-          type=raw,value=${{ needs.version-management.outputs.version }}
-          type=raw,value=${{ needs.version-management.outputs.version-tag }}
-          type=sha,prefix=prod-
-
-    - name: 🏷️ Generate container metadata for UI
-      id: meta-ui  
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ env.UI_IMAGE_NAME }}
         tags: |
           type=raw,value=latest
           type=raw,value=prod
@@ -248,20 +229,6 @@ jobs:
           GIT_SHA=${{ github.sha }}
         cache-from: type=gha
 
-    - name: 🏗️ Build and push UI container
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.ui
-        push: true
-        tags: ${{ steps.meta-ui.outputs.tags }}
-        labels: ${{ steps.meta-ui.outputs.labels }}
-        build-args: |
-          VERSION=${{ needs.version-management.outputs.version }}
-          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          GIT_SHA=${{ github.sha }}
-        cache-from: type=gha
-
     - name: 🔓 Make container packages public
       run: |
         echo "🔓 Configuring container package visibility..."
@@ -270,11 +237,6 @@ jobs:
         gh api --method PATCH \
           "/orgs/pes-mtech-project/packages/container/finbert-news-rag-app%2Ffinbert-api" \
           -f visibility=public || echo "⚠️ API package already public or needs manual configuration"
-        
-        # Make UI package public  
-        gh api --method PATCH \
-          "/orgs/pes-mtech-project/packages/container/finbert-news-rag-app%2Ffinbert-ui" \
-          -f visibility=public || echo "⚠️ UI package already public or needs manual configuration"
 
   # ===== DEPLOY TO PRODUCTION =====
   deploy-production:
@@ -314,13 +276,11 @@ jobs:
         
         echo "🚀 Deploying FinBERT RAG v$VERSION to production..."
         echo "📦 API Image: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:$VERSION"
-        echo "📦 UI Image: ${{ env.REGISTRY }}/${{ env.UI_IMAGE_NAME }}:$VERSION"
         
         # Deploy with version-specific image tags
         npx cdk deploy FinBertRagProdStack \
           --require-approval never \
           --context apiImageTag="$VERSION" \
-          --context uiImageTag="$VERSION" \
           --context version="$VERSION" \
           --outputs-file cdk-outputs.json
           
@@ -394,7 +354,6 @@ jobs:
         ## 📦 Container Images
         
         - **API**: \`ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-api:$VERSION\`
-        - **UI**: \`ghcr.io/pes-mtech-project/finbert-news-rag-app/finbert-ui:$VERSION\`
         
         ## 🔄 Recent Changes
         
@@ -416,7 +375,7 @@ jobs:
     - name: 🎉 Create GitHub Release
       uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.MYGITHUB_TOKEN }}
       with:
         tag_name: ${{ needs.version-management.outputs.version-tag }}
         release_name: FinBERT News RAG v${{ needs.version-management.outputs.version }}

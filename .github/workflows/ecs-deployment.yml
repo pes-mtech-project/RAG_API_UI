@@ -76,7 +76,7 @@ jobs:
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ secrets.MYGITHUB_TOKEN }}
 
     - name: 🏷️ Extract metadata for API
       id: meta-api
@@ -106,7 +106,7 @@ jobs:
           --field visibility=public || \
         echo "⚠️ Package might already be public or permissions may be needed"
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.MYGITHUB_TOKEN }}
 
   deploy:
     needs: [detect-changes, build-and-push]

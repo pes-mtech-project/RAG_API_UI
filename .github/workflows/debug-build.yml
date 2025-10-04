@@ -41,7 +41,7 @@ jobs:
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ secrets.MYGITHUB_TOKEN }}
 
     - name: 🏗️ Test Docker build
       run: |
