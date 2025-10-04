@@ -1,0 +1,434 @@
+name: Production Release ECR
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]  # Semantic versioning tags (e.g., v1.2.3)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 2.0.0)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - prod
+          - staging
+      force_deploy:
+        description: 'Force deployment even without changes'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  # ECR Configuration
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  API_IMAGE_NAME: finbert-rag/api
+  UI_IMAGE_NAME: finbert-rag/ui
+  PROD_CLUSTER_NAME: finbert-rag-prod
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+  id-token: write
+
+jobs:
+  # ===== VERSION VALIDATION & TAGGING =====
+  version-management:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      version-tag: ${{ steps.version.outputs.tag }}
+      is-release: ${{ steps.version.outputs.is-release }}
+      should-deploy: ${{ steps.version.outputs.should-deploy }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version and deployment strategy
+        id: version
+        run: |
+          # Determine version based on trigger type
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+            IS_RELEASE="true"
+            SHOULD_DEPLOY="true"
+          elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION=${VERSION#v}  # Remove 'v' prefix if present
+            IS_RELEASE="true"
+            SHOULD_DEPLOY="true"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            # Main branch push - extract version from recent commits
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            LATEST_TAG=${LATEST_TAG#v}
+            
+            # Check if we have deployment-related commits
+            if git log --oneline -10 | grep -E "(deploy|release|production|ECR)" || [[ "${{ inputs.force_deploy }}" == "true" ]]; then
+              VERSION="${LATEST_TAG}"
+              IS_RELEASE="false"
+              SHOULD_DEPLOY="true"
+            else
+              VERSION="${LATEST_TAG}"
+              IS_RELEASE="false"
+              SHOULD_DEPLOY="false"
+            fi
+          fi
+
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "is-release=${IS_RELEASE}" >> $GITHUB_OUTPUT
+          echo "should-deploy=${SHOULD_DEPLOY}" >> $GITHUB_OUTPUT
+
+          echo "🏷️ Version: ${VERSION}"
+          echo "📦 Tag: v${VERSION}"
+          echo "🚀 Is Release: ${IS_RELEASE}"
+          echo "🎯 Should Deploy: ${SHOULD_DEPLOY}"
+
+  # ===== BUILD AND PUSH TO ECR =====
+  build-and-push:
+    needs: version-management
+    if: needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api, ui]
+    
+    outputs:
+      api-image-uri: ${{ steps.image-uri.outputs.api-image-uri }}
+      ui-image-uri: ${{ steps.image-uri.outputs.ui-image-uri }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Create ECR repository if not exists
+        run: |
+          if [[ "${{ matrix.service }}" == "api" ]]; then
+            REPO_NAME="${{ env.API_IMAGE_NAME }}"
+          else
+            REPO_NAME="${{ env.UI_IMAGE_NAME }}"
+          fi
+          
+          # Check if repository exists, create if not
+          if ! aws ecr describe-repositories --repository-names "${REPO_NAME}" --region ${{ env.AWS_REGION }} 2>/dev/null; then
+            echo "Creating ECR repository: ${REPO_NAME}"
+            aws ecr create-repository \
+              --repository-name "${REPO_NAME}" \
+              --region ${{ env.AWS_REGION }} \
+              --image-scanning-configuration scanOnPush=true
+          else
+            echo "ECR repository ${REPO_NAME} already exists"
+          fi
+
+      - name: Build Docker image
+        run: |
+          if [[ "${{ matrix.service }}" == "api" ]]; then
+            DOCKERFILE="docker/Dockerfile.api"
+            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}"
+          else
+            DOCKERFILE="docker/Dockerfile.ui"
+            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}"
+          fi
+
+          VERSION="${{ needs.version-management.outputs.version }}"
+          
+          # Build with multiple tags
+          docker build \
+            -t ${IMAGE_NAME}:latest \
+            -t ${IMAGE_NAME}:${VERSION} \
+            -t ${IMAGE_NAME}:prod \
+            -f ${DOCKERFILE} .
+
+      - name: Push Docker images to ECR
+        run: |
+          if [[ "${{ matrix.service }}" == "api" ]]; then
+            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}"
+          else
+            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}"
+          fi
+
+          VERSION="${{ needs.version-management.outputs.version }}"
+          
+          # Push all tags
+          docker push ${IMAGE_NAME}:latest
+          docker push ${IMAGE_NAME}:${VERSION}
+          docker push ${IMAGE_NAME}:prod
+
+      - name: Output image URIs
+        id: image-uri
+        run: |
+          if [[ "${{ matrix.service }}" == "api" ]]; then
+            IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
+            echo "api-image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          else
+            IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
+            echo "ui-image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+          fi
+
+  # ===== SECURITY SCANNING =====
+  security-scan:
+    needs: [version-management, build-and-push]
+    if: needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Scan ECR images for vulnerabilities
+        run: |
+          VERSION="${{ needs.version-management.outputs.version }}"
+          
+          # Scan API image
+          echo "🔍 Scanning API image for vulnerabilities..."
+          aws ecr start-image-scan \
+            --repository-name "${{ env.API_IMAGE_NAME }}" \
+            --image-id imageTag=${VERSION} \
+            --region ${{ env.AWS_REGION }} || true
+
+          # Scan UI image
+          echo "🔍 Scanning UI image for vulnerabilities..."
+          aws ecr start-image-scan \
+            --repository-name "${{ env.UI_IMAGE_NAME }}" \
+            --image-id imageTag=${VERSION} \
+            --region ${{ env.AWS_REGION }} || true
+
+          # Wait for scans to complete and get results
+          sleep 30
+          
+          echo "📊 API image scan results:"
+          aws ecr describe-image-scan-findings \
+            --repository-name "${{ env.API_IMAGE_NAME }}" \
+            --image-id imageTag=${VERSION} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageScanFindings.findingCounts' || echo "No scan results yet"
+
+          echo "📊 UI image scan results:"
+          aws ecr describe-image-scan-findings \
+            --repository-name "${{ env.UI_IMAGE_NAME }}" \
+            --image-id imageTag=${VERSION} \
+            --region ${{ env.AWS_REGION }} \
+            --query 'imageScanFindings.findingCounts' || echo "No scan results yet"
+
+  # ===== ECS DEPLOYMENT =====
+  deploy-to-ecs:
+    needs: [version-management, build-and-push, security-scan]
+    if: needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to ECS
+        run: |
+          VERSION="${{ needs.version-management.outputs.version }}"
+          API_IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${VERSION}"
+          UI_IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}:${VERSION}"
+
+          echo "🚀 Deploying to ECS..."
+          echo "API Image: ${API_IMAGE_URI}"
+          echo "UI Image: ${UI_IMAGE_URI}"
+
+          # Get current task definition
+          TASK_DEFINITION=$(aws ecs describe-task-definition \
+            --task-definition finbert-rag-task \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition')
+
+          # Update image URIs in task definition
+          UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq \
+            --arg API_IMAGE "${API_IMAGE_URI}" \
+            --arg UI_IMAGE "${UI_IMAGE_URI}" \
+            '.containerDefinitions |= map(
+              if .name == "finbert-api" then .image = $API_IMAGE
+              elif .name == "finbert-ui" then .image = $UI_IMAGE
+              else . end
+            ) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+
+          # Register new task definition
+          NEW_TASK_DEFINITION=$(echo $UPDATED_TASK_DEFINITION | aws ecs register-task-definition \
+            --cli-input-json file:///dev/stdin \
+            --region ${{ env.AWS_REGION }} \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          echo "📋 New task definition: ${NEW_TASK_DEFINITION}"
+
+          # Update ECS service
+          aws ecs update-service \
+            --cluster ${{ env.PROD_CLUSTER_NAME }} \
+            --service finbert-rag-service \
+            --task-definition "${NEW_TASK_DEFINITION}" \
+            --region ${{ env.AWS_REGION }}
+
+          echo "⏳ Waiting for deployment to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.PROD_CLUSTER_NAME }} \
+            --services finbert-rag-service \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ ECS deployment completed successfully"
+
+  # ===== HEALTH CHECK & VALIDATION =====
+  validate-deployment:
+    needs: [version-management, deploy-to-ecs]
+    if: needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Load Balancer DNS
+        id: lb-dns
+        run: |
+          ALB_DNS=$(aws elbv2 describe-load-balancers \
+            --query 'LoadBalancers[0].DNSName' \
+            --output text \
+            --region ${{ env.AWS_REGION }})
+          
+          echo "dns=${ALB_DNS}" >> $GITHUB_OUTPUT
+          echo "🌐 Load Balancer DNS: ${ALB_DNS}"
+
+      - name: Health Check
+        run: |
+          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          MAX_ATTEMPTS=30
+          ATTEMPT=1
+
+          echo "🔍 Starting health check validation..."
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking health endpoint..."
+            
+            if curl -f -s "https://${ALB_DNS}/health" > /dev/null; then
+              echo "✅ Health check passed!"
+              curl -s "https://${ALB_DNS}/health" | jq '.'
+              break
+            else
+              echo "⏳ Health check failed, waiting 10 seconds..."
+              sleep 10
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
+            echo "❌ Health check failed after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+      - name: API Endpoint Testing
+        run: |
+          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          
+          echo "🧪 Testing API endpoints..."
+
+          # Test 384d embedding endpoint
+          echo "Testing 384d endpoint..."
+          curl -X POST "https://${ALB_DNS}/search/cosine/embedding384d/" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "artificial intelligence investment", "size": 1}' \
+            -f -s | jq '.results | length'
+
+          # Test 768d embedding endpoint
+          echo "Testing 768d endpoint..."
+          curl -X POST "https://${ALB_DNS}/search/cosine/embedding768d/" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "financial market analysis", "size": 1}' \
+            -f -s | jq '.results | length'
+
+          # Test 1155d enhanced endpoint
+          echo "Testing 1155d endpoint..."
+          curl -X POST "https://${ALB_DNS}/search/cosine/embedding1155d/" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "sovereign debt instruments", "size": 1}' \
+            -f -s | jq '.results | length'
+
+          echo "✅ All API endpoints responding successfully"
+
+      - name: Performance Validation
+        run: |
+          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          
+          echo "⚡ Performance validation..."
+          
+          # Test response time for each endpoint
+          for endpoint in "embedding384d" "embedding768d" "embedding1155d"; do
+            echo "Testing ${endpoint} performance..."
+            
+            response_time=$(curl -X POST "https://${ALB_DNS}/search/cosine/${endpoint}/" \
+              -H "Content-Type: application/json" \
+              -d '{"query": "performance test", "size": 1}' \
+              -w "%{time_total}" -s -o /dev/null)
+            
+            echo "${endpoint}: ${response_time}s"
+            
+            # Check if response time is under 1 second
+            if (( $(echo "${response_time} < 1.0" | bc -l) )); then
+              echo "✅ ${endpoint} performance: ${response_time}s (< 1.0s)"
+            else
+              echo "⚠️  ${endpoint} performance: ${response_time}s (>= 1.0s)"
+            fi
+          done
+
+  # ===== NOTIFICATION =====
+  notify-deployment:
+    needs: [version-management, validate-deployment]
+    if: always() && needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deployment Status Summary
+        run: |
+          VERSION="${{ needs.version-management.outputs.version }}"
+          
+          echo "🚀 Production Deployment Summary"
+          echo "================================"
+          echo "Version: ${VERSION}"
+          echo "Environment: ${{ inputs.environment || 'prod' }}"
+          echo "Registry: ${{ env.ECR_REGISTRY }}"
+          echo "Deployment Status: ${{ job.status }}"
+          
+          if [[ "${{ needs.validate-deployment.result }}" == "success" ]]; then
+            echo "✅ Deployment successful and validated"
+          else
+            echo "❌ Deployment failed or validation issues"
+          fi
