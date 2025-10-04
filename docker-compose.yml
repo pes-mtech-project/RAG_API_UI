@@ -15,8 +15,10 @@ services:
       - API_PORT=8000
       - FINBERT_MODEL_PATH=/app/models/finbert
       - CACHE_SIZE=1000
+      - ES_READONLY_HOST=https://host.docker.internal:9200
+      - ES_UNRESTRICTED_KEY=T2ZaUnFaa0ItWVh0ck9TWVNiakY6eVo4VGN6YTBSLWEzQ2dSTlZTV1RqUQ==
     volumes:
-      - ./.env:/app/.env
+      - ./.env:/app/.env.docker
       - ./models:/app/models
       - models_cache:/app/models/sentence_transformers
     networks:
