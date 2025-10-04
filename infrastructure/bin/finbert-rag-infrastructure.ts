@@ -23,7 +23,11 @@ new FinBertRagStack(app, 'FinBertRagDevStack', {
     // Development-specific settings
     enableLogging: true,
     enableXRay: false,
-    domainName: undefined, // No custom domain for dev
+    domainName: undefined,
+    // Route53 DNS Configuration for Development
+    hostedZoneId: 'Z0338885B3LPG5PPUGOI',
+    hostedZoneName: 'lauki.co',
+    subdomainName: 'news-rag-dev',
 });
 
 // Production Environment
@@ -44,5 +48,9 @@ new FinBertRagStack(app, 'FinBertRagProdStack', {
     // Production-specific settings
     enableLogging: true,
     enableXRay: true,
-    domainName: undefined, // Can be configured later
+    domainName: undefined,
+    // Route53 DNS Configuration for Production
+    hostedZoneId: 'Z0338885B3LPG5PPUGOI',
+    hostedZoneName: 'lauki.co',
+    subdomainName: 'news-rag', // Production gets the main subdomain
 });

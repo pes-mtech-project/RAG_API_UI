@@ -46,23 +46,36 @@ This is a multi-service, containerized RAG (Retrieval-Augmented Generation) syst
 
 ## Integration Points
 - **Elasticsearch**: API connects to GCP-hosted Elasticsearch, credentials via `.env`
-- **GHCR**: API container images pushed/pulled from GitHub Container Registry
+- **GHCR**: API container images pushed/pulled from GitHub Container Registry  
 - **AWS**: ECS, ALB, CloudWatch, IAM, VPC, Security Groups managed via CDK
+- **Route53**: Automated DNS management for custom domains (`news-rag.lauki.co`, `news-rag-dev.lauki.co`)
 
 ## Key Files & Directories
 - `api/`, `streamlit/`: Service source code
 - `docker/`: Dockerfiles for all containers (includes base image for ML dependencies)
 - `infrastructure/`: AWS CDK code, deployment scripts
 - `archive/`: Diagnostic and maintenance scripts
-- `scripts/`: Build/deploy scripts, release management
+- `scripts/`: Build/deploy scripts, release management, DNS management
 - `.env.example`: Environment variable template
 - `PRODUCTION_DEPLOYMENT.md`: Comprehensive deployment guide
+- `DNS_MANAGEMENT.md`: Route53 DNS configuration and automation guide
 
 ## Example: Health Check Pattern
 All containers expose `/health` endpoint for ALB/ECS health checks. See `main.py` (API) and `app.py` (UI) for implementation.
 
 ## Example: Automated Deployment
-On push to `main` or `develop`, GitHub Actions build containers, push to GHCR, and trigger ECS/CDK deployment. See workflow logs for status.
+On push to `main` or `develop`, GitHub Actions build containers, push to GHCR, trigger ECS/CDK deployment, and automatically update Route53 DNS records. See workflow logs for status.
+
+## Example: DNS Management Pattern
+DNS records are automatically updated after successful deployments:
+```bash
+# Manual DNS update
+./scripts/update-dns-record.sh dev new-alb-123.ap-south-1.elb.amazonaws.com
+
+# Check DNS status
+dig +short news-rag-dev.lauki.co CNAME
+curl http://news-rag-dev.lauki.co/health
+```
 
 ## Example: Release Management Pattern
 The release process uses semantic versioning with automated GitHub releases:

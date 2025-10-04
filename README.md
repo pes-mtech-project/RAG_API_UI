@@ -94,6 +94,14 @@ cd api && uvicorn main:app --reload
 - **Instance Type**: t3.micro
 - **Container Registry**: GitHub Container Registry (ghcr.io)
 
+### 🌐 Custom Domains (Route53)
+- **Production**: [`news-rag.lauki.co`](http://news-rag.lauki.co) 
+- **Development**: [`news-rag-dev.lauki.co`](http://news-rag-dev.lauki.co)
+- **Management**: Automated DNS updates via Route53 on every deployment
+- **Features**: Stable URLs, automatic failover, 5-minute TTL for fast updates
+
+> **📋 For DNS management details, see [DNS_MANAGEMENT.md](DNS_MANAGEMENT.md)**
+
 ### Automated CI/CD
 - **Production**: Triggered on push to `main` branch (Full stack deployment)
 - **Development**: Triggered on push to `develop` branch (API-only deployment)

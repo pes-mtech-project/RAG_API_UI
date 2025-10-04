@@ -269,6 +269,13 @@ jobs:
         npm install -g aws-cdk@latest
 
     - name: 🚀 Deploy infrastructure & application
+      env:
+        # Map GitHub secrets to expected environment variable names
+        ES_CLOUD_HOST: ${{ secrets.ES_CLOUD_HOST }}
+        ES_CLOUD_READONLY_KEY: ${{ secrets.ES_CLOUD_READONLY_KEY }}
+        ES_CLOUD_UNRESTRICTED_KEY: ${{ secrets.ES_CLOUD_UNRESTRICTED_KEY }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
       run: |
         cd infrastructure
         
@@ -276,8 +283,9 @@ jobs:
         
         echo "🚀 Deploying FinBERT RAG v$VERSION to production..."
         echo "📦 API Image: ${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:$VERSION"
+        echo "🔐 Environment variables configured for Elasticsearch and ML services"
         
-        # Deploy with version-specific image tags
+        # Deploy with version-specific image tags and environment variables
         npx cdk deploy FinBertRagProdStack \
           --require-approval never \
           --context apiImageTag="$VERSION" \
@@ -311,6 +319,31 @@ jobs:
               fi
             done
           fi
+        fi
+
+    - name: 🌐 Update Production DNS Record
+      run: |
+        cd infrastructure
+        
+        # Extract ALB DNS from CDK outputs
+        if [[ -f "cdk-outputs.json" ]]; then
+          ALB_DNS=$(jq -r '.FinBertRagProdStack.LoadBalancerDNS // empty' cdk-outputs.json 2>/dev/null || echo "")
+          
+          if [[ -n "$ALB_DNS" ]]; then
+            echo "🔄 Updating production DNS record"
+            echo "📍 Target ALB: $ALB_DNS"
+            
+            # Update DNS record using our script
+            cd ..
+            ./scripts/update-dns-record.sh prod "$ALB_DNS"
+            
+            echo "✅ Production DNS updated successfully!"
+            echo "🌐 Production URL: http://news-rag.lauki.co"
+          else
+            echo "⚠️ Could not extract ALB DNS from outputs"
+          fi
+        else
+          echo "⚠️ CDK outputs file not found"
         fi
 
   # ===== CREATE GITHUB RELEASE =====

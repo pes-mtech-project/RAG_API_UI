@@ -177,12 +177,21 @@ jobs:
         fi
 
     - name: �🚀 Deploy infrastructure with CDK
+      env:
+        # Map GitHub secrets to expected environment variable names
+        ES_CLOUD_HOST: ${{ secrets.ES_CLOUD_HOST }}
+        ES_CLOUD_READONLY_KEY: ${{ secrets.ES_CLOUD_READONLY_KEY }}
+        ES_CLOUD_UNRESTRICTED_KEY: ${{ secrets.ES_CLOUD_UNRESTRICTED_KEY }}
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
       working-directory: ./infrastructure
       run: |
         # Bootstrap CDK if needed (idempotent)
         export CDK_DEFAULT_ACCOUNT=${{ secrets.AWS_ACCOUNT_ID }}
         export CDK_DEFAULT_REGION=${{ env.AWS_REGION }}
         npx cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ env.AWS_REGION }}
+        
+        echo "🔐 Environment variables configured for application secrets"
         
         # Deploy the stack with retry logic
         STACK_NAME="${{ steps.environment.outputs.stack_name }}"
@@ -260,7 +269,21 @@ jobs:
           sleep 10
         done
 
-    - name: 🎉 Deployment Summary
+    - name: � Update DNS Record
+      run: |
+        # Get load balancer DNS from stack outputs
+        ALB_DNS=$(aws cloudformation describe-stacks \
+          --stack-name ${{ steps.environment.outputs.stack_name }} \
+          --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+          --output text)
+        
+        echo "🔄 Updating DNS record for ${{ steps.environment.outputs.env }} environment"
+        echo "📍 Target ALB: $ALB_DNS"
+        
+        # Update DNS record using our script
+        ./scripts/update-dns-record.sh ${{ steps.environment.outputs.env }} "$ALB_DNS"
+
+    - name: �🎉 Deployment Summary
       run: |
         ALB_DNS=$(aws cloudformation describe-stacks \
           --stack-name ${{ steps.environment.outputs.stack_name }} \
@@ -275,10 +298,25 @@ jobs:
         echo "**Stack:** ${{ steps.environment.outputs.stack_name }}" >> $GITHUB_STEP_SUMMARY
         echo "**Image Tag:** ${{ steps.environment.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
+        # Get custom domain URL if available
+        CUSTOM_URL=""
+        if [ "${{ steps.environment.outputs.env }}" = "dev" ]; then
+          CUSTOM_URL="http://news-rag-dev.lauki.co"
+        elif [ "${{ steps.environment.outputs.env }}" = "prod" ]; then
+          CUSTOM_URL="http://news-rag.lauki.co"
+        fi
+        
         echo "### 🌐 Application URLs" >> $GITHUB_STEP_SUMMARY
-        echo "- **API:** $API_URL" >> $GITHUB_STEP_SUMMARY
-        echo "- **API Docs:** $API_URL/docs" >> $GITHUB_STEP_SUMMARY
-        echo "- **Health Check:** $API_URL/health" >> $GITHUB_STEP_SUMMARY
+        if [ -n "$CUSTOM_URL" ]; then
+          echo "- **🌟 Custom Domain:** $CUSTOM_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **📚 API Docs:** $CUSTOM_URL/docs" >> $GITHUB_STEP_SUMMARY
+          echo "- **💚 Health Check:** $CUSTOM_URL/health" >> $GITHUB_STEP_SUMMARY
+          echo "- **⚙️ Direct ALB:** $API_URL" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **API:** $API_URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Docs:** $API_URL/docs" >> $GITHUB_STEP_SUMMARY
+          echo "- **Health Check:** $API_URL/health" >> $GITHUB_STEP_SUMMARY
+        fi
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 Container Image" >> $GITHUB_STEP_SUMMARY
         echo "- **Image:** \`${{ env.REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ steps.environment.outputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
