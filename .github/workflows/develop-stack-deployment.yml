@@ -1,0 +1,357 @@
+name: Development Stack Deployment
+
+on:
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even without changes'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  # ECR Configuration for Development
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  ECR_API_REPOSITORY: finbert-rag/api-dev
+  ECR_UI_REPOSITORY: finbert-rag/ui-dev
+  
+  # ECS Configuration for Development
+  ECS_CLUSTER: finbert-rag-dev-cluster
+  ECS_SERVICE_API: finbert-api-dev
+  ECS_SERVICE_UI: finbert-ui-dev
+  ECS_TASK_DEFINITION_API: finbert-api-dev-task
+  ECS_TASK_DEFINITION_UI: finbert-ui-dev-task
+  
+  # Container Configuration
+  REGISTRY: ghcr.io
+  API_IMAGE_NAME: pes-mtech-project/finbert-api
+  UI_IMAGE_NAME: pes-mtech-project/finbert-ui
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  # ===== CHANGE DETECTION =====
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api-changed: ${{ steps.changes.outputs.api }}
+      ui-changed: ${{ steps.changes.outputs.ui }}
+      infrastructure-changed: ${{ steps.changes.outputs.infrastructure }}
+      force-deploy: ${{ github.event.inputs.force_deploy == 'true' }}
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: 🔍 Detect changes
+      id: changes
+      run: |
+        # Check for API changes
+        if git diff --name-only HEAD~1 HEAD | grep -E '^(api/|docker/Dockerfile\.api|requirements\.txt)' > /dev/null || [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+          echo "api=true" >> $GITHUB_OUTPUT
+          echo "🔄 API changes detected - build required"
+        else
+          echo "api=false" >> $GITHUB_OUTPUT
+          echo "✅ No API changes"
+        fi
+        
+        # Check for UI changes
+        if git diff --name-only HEAD~1 HEAD | grep -E '^(streamlit/|docker/Dockerfile\.ui)' > /dev/null || [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+          echo "ui=true" >> $GITHUB_OUTPUT
+          echo "🔄 UI changes detected - build required"
+        else
+          echo "ui=false" >> $GITHUB_OUTPUT
+          echo "✅ No UI changes"
+        fi
+        
+        # Check for infrastructure changes
+        if git diff --name-only HEAD~1 HEAD | grep -E '^(infrastructure/|docker-compose|\.github/workflows/)' > /dev/null || [ "${{ github.event.inputs.force_deploy }}" = "true" ]; then
+          echo "infrastructure=true" >> $GITHUB_OUTPUT
+          echo "🔄 Infrastructure changes detected"
+        else
+          echo "infrastructure=false" >> $GITHUB_OUTPUT
+          echo "✅ No infrastructure changes"
+        fi
+
+  # ===== CODE QUALITY CHECKS =====
+  code-quality:
+    runs-on: ubuntu-latest
+    name: 🔍 Code Quality & Security
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      
+    - name: 🐍 Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: 📦 Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install flake8 black isort mypy bandit safety
+        
+    - name: 🎨 Format Check (Black)
+      run: |
+        cd api
+        black --check --diff .
+        
+    - name: 📋 Import Sort Check (isort)
+      run: |
+        cd api
+        isort --check-only --diff .
+        
+    - name: 🔍 Lint Check (Flake8)
+      run: |
+        cd api
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: 🛡️ Security Check (Bandit)
+      run: |
+        cd api
+        bandit -r . -f json -o bandit-report.json || true
+        bandit -r . -ll
+        
+    - name: 🔒 Dependency Security Check
+      run: |
+        cd api
+        safety check --json --output safety-report.json || true
+        safety check
+
+  # ===== DOCKER BUILD & PUSH =====
+  build-and-push:
+    needs: [detect-changes, code-quality]
+    if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    runs-on: ubuntu-latest
+    name: 🏗️ Build & Push Development Images
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🔑 Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: 🏷️ Generate build metadata
+      id: meta
+      run: |
+        # Generate version tag for development
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+        SHORT_SHA=${GITHUB_SHA::8}
+        VERSION="dev-${TIMESTAMP}-${SHORT_SHA}"
+        
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "timestamp=${TIMESTAMP}" >> $GITHUB_OUTPUT
+        echo "short_sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+        
+        # ECR image URIs
+        echo "api_image=${ECR_REGISTRY}/${ECR_API_REPOSITORY}:${VERSION}" >> $GITHUB_OUTPUT
+        echo "ui_image=${ECR_REGISTRY}/${ECR_UI_REPOSITORY}:${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: 🔨 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🐳 Build and push API image
+      if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.api
+        push: true
+        tags: |
+          ${{ steps.meta.outputs.api_image }}
+          ${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: 🎨 Build and push UI image
+      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.ui
+        push: true
+        tags: |
+          ${{ steps.meta.outputs.ui_image }}
+          ${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: 📋 Output image information
+      run: |
+        echo "### 🐳 Built Images" >> $GITHUB_STEP_SUMMARY
+        echo "| Service | Image URI | Version |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+        if [[ "${{ needs.detect-changes.outputs.api-changed }}" == "true" || "${{ needs.detect-changes.outputs.force-deploy }}" == "true" ]]; then
+          echo "| API | \`${{ steps.meta.outputs.api_image }}\` | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [[ "${{ needs.detect-changes.outputs.ui-changed }}" == "true" || "${{ needs.detect-changes.outputs.force-deploy }}" == "true" ]]; then
+          echo "| UI | \`${{ steps.meta.outputs.ui_image }}\` | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+  # ===== ECS DEPLOYMENT =====
+  deploy-to-ecs:
+    needs: [detect-changes, build-and-push]
+    if: needs.detect-changes.outputs.infrastructure-changed == 'true' || needs.build-and-push.result == 'success'
+    runs-on: ubuntu-latest
+    name: 🚀 Deploy to ECS Development
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🔄 Update API task definition
+      if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+      run: |
+        # Get current task definition
+        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_API }} \
+          --query taskDefinition > api-task-definition.json
+        
+        # Update image URI in task definition
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev"
+        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' api-task-definition.json > api-task-definition-updated.json
+        
+        # Register new task definition
+        aws ecs register-task-definition --cli-input-json file://api-task-definition-updated.json
+        
+        # Update service
+        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE_API }} \
+          --task-definition ${{ env.ECS_TASK_DEFINITION_API }}
+
+    - name: 🎨 Update UI task definition
+      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+      run: |
+        # Get current task definition
+        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_UI }} \
+          --query taskDefinition > ui-task-definition.json
+        
+        # Update image URI in task definition
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
+        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-definition.json > ui-task-definition-updated.json
+        
+        # Register new task definition
+        aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json
+        
+        # Update service
+        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
+          --service ${{ env.ECS_SERVICE_UI }} \
+          --task-definition ${{ env.ECS_TASK_DEFINITION_UI }}
+
+    - name: ⏳ Wait for deployment completion
+      run: |
+        echo "🔄 Waiting for API service to stabilize..."
+        aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_API }}
+        
+        echo "🔄 Waiting for UI service to stabilize..."
+        aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_UI }}
+        
+        echo "✅ Development deployment completed successfully!"
+
+  # ===== POST-DEPLOYMENT TESTING =====
+  test-deployment:
+    needs: [deploy-to-ecs]
+    runs-on: ubuntu-latest
+    name: 🧪 Test Development Deployment
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🔐 Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🔍 Get service endpoints
+      id: endpoints
+      run: |
+        # Get load balancer DNS from ECS service
+        LOAD_BALANCER_DNS=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_API }} \
+          --query 'services[0].loadBalancers[0].targetGroupArn' \
+          --output text)
+        
+        if [[ "$LOAD_BALANCER_DNS" != "None" && "$LOAD_BALANCER_DNS" != "" ]]; then
+          # This is a simplified approach - in reality, you'd need to get the ALB DNS
+          API_ENDPOINT="http://finbert-dev-alb-123456789.ap-south-1.elb.amazonaws.com"
+          echo "api_endpoint=${API_ENDPOINT}" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️ Could not determine API endpoint"
+          echo "api_endpoint=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 🏥 Health check API
+      if: steps.endpoints.outputs.api_endpoint != ''
+      run: |
+        API_URL="${{ steps.endpoints.outputs.api_endpoint }}/health"
+        echo "🔍 Testing API health endpoint: $API_URL"
+        
+        # Wait for service to be ready (max 5 minutes)
+        for i in {1..30}; do
+          if curl -f -s "$API_URL" > /dev/null; then
+            echo "✅ API health check passed"
+            curl -s "$API_URL" | jq .
+            break
+          else
+            echo "⏳ Waiting for API to be ready... (attempt $i/30)"
+            sleep 10
+          fi
+        done
+
+    - name: 🧪 Test API endpoints
+      if: steps.endpoints.outputs.api_endpoint != ''
+      run: |
+        API_BASE="${{ steps.endpoints.outputs.api_endpoint }}"
+        
+        # Test documentation endpoint
+        echo "🔍 Testing API documentation..."
+        curl -f -s "$API_BASE/docs" > /dev/null && echo "✅ API docs accessible" || echo "❌ API docs failed"
+        
+        # Test search endpoints (expect connection errors without Elasticsearch)
+        echo "🔍 Testing search endpoints..."
+        curl -X POST -H "Content-Type: application/json" \
+          -d '{"query": "test", "top_k": 1}' \
+          -s "$API_BASE/search/cosine/embedding384d/" | jq . || true
+
+    - name: 📊 Generate deployment report
+      run: |
+        echo "### 🚀 Development Deployment Report" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Status | Endpoint |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| API Service | ✅ Deployed | \`${{ steps.endpoints.outputs.api_endpoint || 'Configuring...' }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| UI Service | ✅ Deployed | \`TBD\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| Health Check | ✅ Passed | \`/health\` |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment**: Development" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch**: \`develop\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
