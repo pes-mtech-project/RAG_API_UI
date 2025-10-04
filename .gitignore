@@ -328,3 +328,13 @@ test_data/
 experiments/
 sandbox/
 *.draftarchive/
+
+# Temporary AWS task definitions
+*.json
+current-task-def.json
+fixed-task-def.json
+updated-task-def.json
+
+# Environment files with real credentials
+.env.secure
+.env.with_real_credentials_BACKUP
