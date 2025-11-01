@@ -148,6 +148,18 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: 🏗️ Ensure ECR repositories exist (dev)
+      run: |
+        set -e
+        for REPO in "${{ env.ECR_API_REPOSITORY }}" "${{ env.ECR_UI_REPOSITORY }}"; do
+          if aws ecr describe-repositories --repository-names "$REPO" >/dev/null 2>&1; then
+            echo "ECR repo exists: $REPO"
+          else
+            echo "Creating ECR repo: $REPO"
+            aws ecr create-repository --repository-name "$REPO" --image-scanning-configuration scanOnPush=true --encryption-configuration encryptionType=AES256 >/dev/null
+          fi
+        done
+
     - name: 🔑 Login to Amazon ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
@@ -295,20 +307,39 @@ jobs:
     - name: 🔍 Get service endpoints
       id: endpoints
       run: |
-        # Get load balancer DNS from ECS service
-        LOAD_BALANCER_DNS=$(aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE_API }} \
-          --query 'services[0].loadBalancers[0].targetGroupArn' \
-          --output text)
-        
-        if [[ "$LOAD_BALANCER_DNS" != "None" && "$LOAD_BALANCER_DNS" != "" ]]; then
-          # This is a simplified approach - in reality, you'd need to get the ALB DNS
-          API_ENDPOINT="http://finbert-dev-alb-123456789.ap-south-1.elb.amazonaws.com"
-          echo "api_endpoint=${API_ENDPOINT}" >> $GITHUB_OUTPUT
+        set -e
+        # Try to read LoadBalancer DNS from CloudFormation stack outputs
+        CFN_DNS=$(aws cloudformation describe-stacks \
+          --stack-name FinBertRagDevStack \
+          --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+          --output text || true)
+
+        if [[ -n "$CFN_DNS" && "$CFN_DNS" != "None" ]]; then
+          echo "Using CFN LoadBalancer DNS: $CFN_DNS"
+          echo "api_endpoint=http://$CFN_DNS" >> $GITHUB_OUTPUT
         else
-          echo "⚠️ Could not determine API endpoint"
-          echo "api_endpoint=" >> $GITHUB_OUTPUT
+          echo "CFN output not found. Falling back to ECS -> ELBv2 discovery"
+          TG_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_API }} \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text || true)
+          if [[ -n "$TG_ARN" && "$TG_ARN" != "None" ]]; then
+            LB_ARN=$(aws elbv2 describe-target-groups --target-group-arns "$TG_ARN" --query 'TargetGroups[0].LoadBalancerArns[0]' --output text || true)
+            if [[ -n "$LB_ARN" && "$LB_ARN" != "None" ]]; then
+              LB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$LB_ARN" --query 'LoadBalancers[0].DNSName' --output text || true)
+              if [[ -n "$LB_DNS" && "$LB_DNS" != "None" ]]; then
+                echo "Discovered ALB DNS: $LB_DNS"
+                echo "api_endpoint=http://$LB_DNS" >> $GITHUB_OUTPUT
+              else
+                echo "api_endpoint=" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "api_endpoint=" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "api_endpoint=" >> $GITHUB_OUTPUT
+          fi
         fi
 
     - name: 🏥 Health check API
