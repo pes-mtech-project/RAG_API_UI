@@ -83,56 +83,64 @@ jobs:
           echo "✅ No infrastructure changes"
         fi
 
-  # ===== CODE QUALITY CHECKS =====
+  # ===== CODE QUALITY CHECKS (parallel via matrix, non-blocking) =====
   code-quality:
     runs-on: ubuntu-latest
-    name: 🔍 Code Quality & Security
-    
+    name: 🔍 Code Quality & Security • ${{ matrix.task }}
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [black, isort, flake8, bandit, safety]
     steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-      
-    - name: 🐍 Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        
-    - name: 📦 Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install flake8 black isort mypy bandit safety
-        
-    - name: 🎨 Format Check (Black)
-      run: |
-        cd api
-        black --check --diff .
-        
-    - name: 📋 Import Sort Check (isort)
-      run: |
-        cd api
-        isort --check-only --diff .
-        
-    - name: 🔍 Lint Check (Flake8)
-      run: |
-        cd api
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-        
-    - name: 🛡️ Security Check (Bandit)
-      run: |
-        cd api
-        bandit -r . -f json -o bandit-report.json || true
-        bandit -r . -ll
-        
-    - name: 🔒 Dependency Security Check
-      run: |
-        cd api
-        safety check --json --output safety-report.json || true
-        safety check
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install flake8 black isort mypy bandit safety
+
+      - name: 🎨 Format Check (Black)
+        if: matrix.task == 'black'
+        run: |
+          cd api
+          black --check --diff .
+
+      - name: 📋 Import Sort Check (isort)
+        if: matrix.task == 'isort'
+        run: |
+          cd api
+          isort --check-only --diff .
+
+      - name: 🔍 Lint Check (Flake8)
+        if: matrix.task == 'flake8'
+        run: |
+          cd api
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: 🛡️ Security Check (Bandit)
+        if: matrix.task == 'bandit'
+        run: |
+          cd api
+          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . -ll
+
+      - name: 🔒 Dependency Security Check (Safety)
+        if: matrix.task == 'Safety' || matrix.task == 'safety'
+        run: |
+          cd api
+          safety check --json --output safety-report.json || true
+          safety check || true
 
   # ===== DOCKER BUILD & PUSH =====
   build-and-push:
-    needs: [detect-changes, code-quality]
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
     runs-on: ubuntu-latest
     name: 🏗️ Build & Push Development Images
