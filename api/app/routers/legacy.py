@@ -4,6 +4,7 @@ Maintains compatibility with existing API endpoints
 """
 
 import logging
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Dict, Any
 

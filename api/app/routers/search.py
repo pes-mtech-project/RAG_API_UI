@@ -110,6 +110,45 @@ async def search_cosine_1155d(query: SearchQuery):
         logger.error(f"1155d enhanced search failed: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
+@router.get("/embedding-compatibility/",
+           summary="Get embedding compatibility information")
+async def embedding_compatibility():
+    """
+    Get information about available embedding endpoints and their compatibility.
+    """
+    try:
+        return {
+            "status": "operational",
+            "available_endpoints": {
+                "384d": {
+                    "endpoint": "/search/cosine/embedding384d/",
+                    "model": "all-MiniLM-L6-v2",
+                    "dimensions": 384,
+                    "description": "Fast semantic search",
+                    "use_case": "Quick queries and real-time search"
+                },
+                "768d": {
+                    "endpoint": "/search/cosine/embedding768d/", 
+                    "model": "all-mpnet-base-v2",
+                    "dimensions": 768,
+                    "description": "High-quality semantic search",
+                    "use_case": "Accurate semantic matching"
+                },
+                "1155d": {
+                    "endpoint": "/search/cosine/embedding1155d/",
+                    "model": "enhanced (384d + 768d + 3d sentiment)",
+                    "dimensions": 1155,
+                    "description": "Financial-enhanced search with sentiment",
+                    "use_case": "Advanced financial analysis and sentiment-aware search"
+                }
+            },
+            "supported_operations": ["cosine_similarity"],
+            "api_version": "2.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Failed to get embedding compatibility: {e}")
+        raise HTTPException(status_code=500, detail=f"Compatibility info retrieval failed: {str(e)}")
+
 @router.get("/model-cache-info/",
            summary="Get model cache information")
 async def get_model_cache_info():

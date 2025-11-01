@@ -1,10 +1,11 @@
 name: Development Stack Deployment
 
 on:
-  push:
-    branches: [ develop ]
-  pull_request:
-    branches: [ develop ]
+  # Disable automatic triggers to save GitHub Actions minutes
+  # push:
+  #   branches: [ develop ]
+  # pull_request:
+  #   branches: [ develop ]
   workflow_dispatch:
     inputs:
       force_deploy:

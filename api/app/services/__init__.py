@@ -14,5 +14,3 @@ search_service = SearchService()
 
 __all__ = ['ElasticsearchService', 'EmbeddingService', 'SearchService', 'ModelPreloader', 
            'elasticsearch_service', 'embedding_service', 'search_service']
-
-__all__ = ['elasticsearch_service', 'embedding_service', 'search_service']
