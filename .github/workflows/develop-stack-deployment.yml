@@ -17,7 +17,8 @@ on:
 env:
   # ECR Configuration for Development
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  # ECR_REGISTRY will be computed dynamically from STS identity to avoid cross-account mismatch
+  ECR_REGISTRY: ""
   ECR_API_REPOSITORY: finbert-rag/api-dev
   ECR_UI_REPOSITORY: finbert-rag/ui-dev
   
@@ -156,6 +157,14 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    - name: 🔎 Determine AWS account and ECR registry
+      id: acct
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+        echo "ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+        echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
     - name: 🏗️ Ensure ECR repositories exist (dev)
       run: |
         set -e
@@ -247,43 +256,57 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: 🔄 Update API task definition
+    - name: � Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: �🔄 Update API task definition (from current service)
       if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
       run: |
-        # Get current task definition
-        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_API }} \
-          --query taskDefinition > api-task-definition.json
-        
-        # Update image URI in task definition
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev"
-        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' api-task-definition.json > api-task-definition-updated.json
-        
-        # Register new task definition
-        aws ecs register-task-definition --cli-input-json file://api-task-definition-updated.json
-        
-        # Update service
-        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
-          --service ${{ env.ECS_SERVICE_API }} \
-          --task-definition ${{ env.ECS_TASK_DEFINITION_API }}
+        set -e
+        # Discover current task definition ARN on the service
+        CURR_TD_ARN=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_API }} \
+          --query 'services[0].taskDefinition' --output text)
+        echo "Current API task def: $CURR_TD_ARN"
 
-    - name: 🎨 Update UI task definition
+        # Export the full task definition JSON
+        aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" \
+          --query taskDefinition > api-task-definition.json
+
+        # Remove fields not accepted on register
+        cat api-task-definition.json \
+          | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          > api-task-def-stripped.json
+
+        # Update image URI in container 0 (assumes single container task)
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev"
+        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' api-task-def-stripped.json > api-task-definition-updated.json
+
+        # Register new task definition revision and capture new ARN
+        NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://api-task-definition-updated.json \
+          --query 'taskDefinition.taskDefinitionArn' --output text)
+        echo "New API task def: $NEW_TD_ARN"
+
+        # Update service to use new TD revision
+        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_API }} --task-definition "$NEW_TD_ARN"
+
+    - name: 🎨 Update UI task definition (from current service)
       if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
       run: |
-        # Get current task definition
-        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_UI }} \
-          --query taskDefinition > ui-task-definition.json
-        
-        # Update image URI in task definition
+        set -e
+        CURR_TD_ARN=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_UI }} \
+          --query 'services[0].taskDefinition' --output text)
+        echo "Current UI task def: $CURR_TD_ARN"
+        aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" --query taskDefinition > ui-task-definition.json
+        cat ui-task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > ui-task-def-stripped.json
         NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
-        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-definition.json > ui-task-definition-updated.json
-        
-        # Register new task definition
-        aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json
-        
-        # Update service
-        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
-          --service ${{ env.ECS_SERVICE_UI }} \
-          --task-definition ${{ env.ECS_TASK_DEFINITION_UI }}
+        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-def-stripped.json > ui-task-definition-updated.json
+        NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json --query 'taskDefinition.taskDefinitionArn' --output text)
+        echo "New UI task def: $NEW_TD_ARN"
+        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_UI }} --task-definition "$NEW_TD_ARN"
 
     - name: ⏳ Wait for deployment completion
       run: |
