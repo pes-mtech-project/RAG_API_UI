@@ -27,7 +27,6 @@ on:
 env:
   # ECR Configuration
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   API_IMAGE_NAME: finbert-rag/api
   UI_IMAGE_NAME: finbert-rag/ui
 
@@ -122,6 +121,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Resolve AWS account
+        id: account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
       - name: Install CDK dependencies
         working-directory: infrastructure
         run: npm ci --ignore-scripts
@@ -129,7 +134,7 @@ jobs:
       - name: Ensure production infrastructure exists
         working-directory: infrastructure
         env:
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_ACCOUNT: ${{ steps.account.outputs.account_id }}
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
         run: |
           npx cdk deploy FinBertRagProdStack \
@@ -211,6 +216,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Resolve AWS account
+        id: account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -236,12 +247,15 @@ jobs:
 
       - name: Build Docker image
         run: |
+          ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
           if [[ "${{ matrix.service }}" == "api" ]]; then
             DOCKERFILE="docker/Dockerfile.api"
-            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}"
+            IMAGE_NAME="${REGISTRY}/${{ env.API_IMAGE_NAME }}"
           else
             DOCKERFILE="docker/Dockerfile.ui"
-            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}"
+            IMAGE_NAME="${REGISTRY}/${{ env.UI_IMAGE_NAME }}"
           fi
 
           VERSION="${{ needs.version-management.outputs.version }}"
@@ -255,10 +269,13 @@ jobs:
 
       - name: Push Docker images to ECR
         run: |
+          ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
           if [[ "${{ matrix.service }}" == "api" ]]; then
-            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}"
+            IMAGE_NAME="${REGISTRY}/${{ env.API_IMAGE_NAME }}"
           else
-            IMAGE_NAME="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}"
+            IMAGE_NAME="${REGISTRY}/${{ env.UI_IMAGE_NAME }}"
           fi
 
           VERSION="${{ needs.version-management.outputs.version }}"
@@ -271,11 +288,14 @@ jobs:
       - name: Output image URIs
         id: image-uri
         run: |
+          ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+
           if [[ "${{ matrix.service }}" == "api" ]]; then
-            IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
+            IMAGE_URI="${REGISTRY}/${{ env.API_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
             echo "api-image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
           else
-            IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
+            IMAGE_URI="${REGISTRY}/${{ env.UI_IMAGE_NAME }}:${{ needs.version-management.outputs.version }}"
             echo "ui-image-uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
           fi
 
@@ -345,6 +365,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Resolve AWS account
+        id: account
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
       - name: Deploy to ECS
         run: |
           set -euo pipefail
@@ -353,7 +379,9 @@ jobs:
           CLUSTER_NAME="${{ needs.ensure-infrastructure.outputs.cluster_name }}"
           SERVICE_NAME="${{ needs.ensure-infrastructure.outputs.service_name }}"
           CURRENT_TASK_DEFINITION="${{ needs.ensure-infrastructure.outputs.task_definition }}"
-          API_IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${VERSION}"
+          ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+          ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          API_IMAGE_URI="${ECR_REGISTRY}/${{ env.API_IMAGE_NAME }}:${VERSION}"
 
           echo "🚀 Deploying ${API_IMAGE_URI} to ${SERVICE_NAME} on ${CLUSTER_NAME}"
 
