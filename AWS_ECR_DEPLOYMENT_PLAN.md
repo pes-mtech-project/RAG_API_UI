@@ -184,13 +184,34 @@ aws ecr list-images --repository-name finbert-rag/ui --region ap-south-1
 
 ### **Step 3.1: Update GitHub Workflows for ECR**
 
-**Update `.github/workflows/production-release.yml`:**
+**Update `.github/workflows/production-release-ecr.yml`:**
 ```yaml
 env:
-  REGISTRY: <account-id>.dkr.ecr.ap-south-1.amazonaws.com
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   API_IMAGE_NAME: finbert-rag/api
   UI_IMAGE_NAME: finbert-rag/ui
-  AWS_REGION: ap-south-1
+```
+
+> The workflow now runs an `ensure-infrastructure` job that executes `npx cdk deploy FinBertRagProdStack --require-approval never` so the ECS cluster, load balancer, task definition, and secrets wiring are always present before the container rollout begins.
+
+```yaml
+jobs:
+  ensure-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - uses: aws-actions/configure-aws-credentials@v4
+      - run: npm ci --ignore-scripts
+        working-directory: infrastructure
+      - run: |
+          npx cdk deploy FinBertRagProdStack \
+            --require-approval never \
+            --outputs-file cdk-outputs.json
+        working-directory: infrastructure
 ```
 
 **Update workflow authentication:**
@@ -211,16 +232,32 @@ env:
 
 **Update `infrastructure/lib/finbert-rag-stack.ts`:**
 ```typescript
-// Update container image references
-const apiImage = ecs.ContainerImage.fromEcrRepository(
-  ecr.Repository.fromRepositoryName(this, 'ApiRepo', 'finbert-rag/api'),
-  'latest'
-);
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
-const uiImage = ecs.ContainerImage.fromEcrRepository(
-  ecr.Repository.fromRepositoryName(this, 'UiRepo', 'finbert-rag/ui'),
-  'latest'
-);
+const repositoryName = props.apiRepositoryName ?? 'finbert-rag/api';
+const imageTag = props.apiImageTag ?? 'prod';
+const apiRepository = ecr.Repository.fromRepositoryAttributes(this, 'FinBertApiRepository', {
+  repositoryName,
+  repositoryArn: cdk.Stack.of(this).formatArn({
+    service: 'ecr',
+    resource: 'repository',
+    resourceName: repositoryName,
+  }),
+});
+
+const esSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertEsSecret', 'finbert-rag/elasticsearch/credentials');
+const apiTokensSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertApiTokensSecret', 'finbert-rag/api/tokens');
+
+taskImageOptions: {
+  image: ecs.ContainerImage.fromEcrRepository(apiRepository, imageTag),
+  secrets: {
+    ES_READONLY_HOST: ecs.Secret.fromSecretsManager(esSecret, 'host'),
+    ES_UNRESTRICTED_KEY: ecs.Secret.fromSecretsManager(esSecret, 'key'),
+    ES_CLOUD_INDEX: ecs.Secret.fromSecretsManager(esSecret, 'index'),
+    HUGGINGFACE_TOKEN: ecs.Secret.fromSecretsManager(apiTokensSecret, 'huggingface_token'),
+  },
+}
 ```
 
 ### **Step 3.3: Environment Variables Migration**

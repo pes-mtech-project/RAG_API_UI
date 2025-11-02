@@ -30,7 +30,6 @@ env:
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   API_IMAGE_NAME: finbert-rag/api
   UI_IMAGE_NAME: finbert-rag/ui
-  PROD_CLUSTER_NAME: finbert-rag-prod
 
 permissions:
   contents: write
@@ -93,6 +92,100 @@ jobs:
           echo "📦 Tag: v${VERSION}"
           echo "🚀 Is Release: ${IS_RELEASE}"
           echo "🎯 Should Deploy: ${SHOULD_DEPLOY}"
+
+  # ===== ENSURE INFRASTRUCTURE =====
+  ensure-infrastructure:
+    needs: version-management
+    if: needs.version-management.outputs.should-deploy == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      cluster_name: ${{ steps.cdk.outputs.cluster_name }}
+      service_name: ${{ steps.cdk.outputs.service_name }}
+      load_balancer_dns: ${{ steps.cdk.outputs.load_balancer_dns }}
+      task_definition: ${{ steps.ecs.outputs.task_definition }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install CDK dependencies
+        working-directory: infrastructure
+        run: npm ci --ignore-scripts
+
+      - name: Ensure production infrastructure exists
+        working-directory: infrastructure
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+        run: |
+          npx cdk deploy FinBertRagProdStack \
+            --require-approval never \
+            --progress events \
+            --outputs-file cdk-outputs.json
+
+      - name: Capture stack outputs
+        id: cdk
+        working-directory: infrastructure
+        run: |
+          STACK_OUTPUTS=$(cat cdk-outputs.json)
+          CLUSTER_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.ClusterName')
+          SERVICE_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.ServiceName')
+          ALB_DNS=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.LoadBalancerDNS')
+
+          if [[ -z "${CLUSTER_NAME}" || "${CLUSTER_NAME}" == "null" ]]; then
+            echo "❌ Failed to resolve ECS cluster name from CDK outputs"
+            exit 1
+          fi
+
+          echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
+          echo "service_name=${SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "load_balancer_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
+
+      - name: Discover current task definition
+        id: ecs
+        env:
+          CLUSTER_NAME: ${{ steps.cdk.outputs.cluster_name }}
+          SERVICE_NAME: ${{ steps.cdk.outputs.service_name }}
+        run: |
+          if [[ -z "${SERVICE_NAME}" || "${SERVICE_NAME}" == "null" ]]; then
+            echo "⚠️ Service name not exported by CDK. Attempting lookup..."
+            SERVICE_NAME=$(aws ecs list-services \
+              --cluster "${CLUSTER_NAME}" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'serviceArns[0]' --output text | awk -F'/' '{print $NF}')
+            if [[ -z "${SERVICE_NAME}" || "${SERVICE_NAME}" == "None" ]]; then
+              echo "❌ Unable to resolve ECS service name"
+              exit 1
+            fi
+          fi
+
+          TASK_DEFINITION=$(aws ecs describe-services \
+            --cluster "${CLUSTER_NAME}" \
+            --services "${SERVICE_NAME}" \
+            --region ${{ env.AWS_REGION }} \
+            --query 'services[0].taskDefinition' \
+            --output text)
+
+          if [[ -z "${TASK_DEFINITION}" || "${TASK_DEFINITION}" == "None" ]]; then
+            echo "❌ Failed to retrieve current task definition for ${SERVICE_NAME}"
+            exit 1
+          fi
+
+          echo "task_definition=${TASK_DEFINITION}" >> $GITHUB_OUTPUT
 
   # ===== BUILD AND PUSH TO ECR =====
   build-and-push:
@@ -237,7 +330,7 @@ jobs:
 
   # ===== ECS DEPLOYMENT =====
   deploy-to-ecs:
-    needs: [version-management, build-and-push, security-scan]
+    needs: [version-management, build-and-push, security-scan, ensure-infrastructure]
     if: needs.version-management.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
     
@@ -254,32 +347,29 @@ jobs:
 
       - name: Deploy to ECS
         run: |
+          set -euo pipefail
+
           VERSION="${{ needs.version-management.outputs.version }}"
+          CLUSTER_NAME="${{ needs.ensure-infrastructure.outputs.cluster_name }}"
+          SERVICE_NAME="${{ needs.ensure-infrastructure.outputs.service_name }}"
+          CURRENT_TASK_DEFINITION="${{ needs.ensure-infrastructure.outputs.task_definition }}"
           API_IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.API_IMAGE_NAME }}:${VERSION}"
-          UI_IMAGE_URI="${{ env.ECR_REGISTRY }}/${{ env.UI_IMAGE_NAME }}:${VERSION}"
 
-          echo "🚀 Deploying to ECS..."
-          echo "API Image: ${API_IMAGE_URI}"
-          echo "UI Image: ${UI_IMAGE_URI}"
+          echo "🚀 Deploying ${API_IMAGE_URI} to ${SERVICE_NAME} on ${CLUSTER_NAME}"
 
-          # Get current task definition
-          TASK_DEFINITION=$(aws ecs describe-task-definition \
-            --task-definition finbert-rag-task \
+          TASK_DEFINITION_JSON=$(aws ecs describe-task-definition \
+            --task-definition "${CURRENT_TASK_DEFINITION}" \
             --region ${{ env.AWS_REGION }} \
-            --query 'taskDefinition')
+            --query 'taskDefinition' \
+            --output json)
 
-          # Update image URIs in task definition
-          UPDATED_TASK_DEFINITION=$(echo $TASK_DEFINITION | jq \
+          UPDATED_TASK_DEFINITION=$(echo "${TASK_DEFINITION_JSON}" | jq \
             --arg API_IMAGE "${API_IMAGE_URI}" \
-            --arg UI_IMAGE "${UI_IMAGE_URI}" \
-            '.containerDefinitions |= map(
-              if .name == "finbert-api" then .image = $API_IMAGE
-              elif .name == "finbert-ui" then .image = $UI_IMAGE
-              else . end
-            ) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
+            '.containerDefinitions = (.containerDefinitions | map(
+              if .name == "finbert-api" then .image = $API_IMAGE else . end
+            )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
 
-          # Register new task definition
-          NEW_TASK_DEFINITION=$(echo $UPDATED_TASK_DEFINITION | aws ecs register-task-definition \
+          NEW_TASK_DEFINITION=$(echo "${UPDATED_TASK_DEFINITION}" | aws ecs register-task-definition \
             --cli-input-json file:///dev/stdin \
             --region ${{ env.AWS_REGION }} \
             --query 'taskDefinition.taskDefinitionArn' \
@@ -287,24 +377,23 @@ jobs:
 
           echo "📋 New task definition: ${NEW_TASK_DEFINITION}"
 
-          # Update ECS service
           aws ecs update-service \
-            --cluster ${{ env.PROD_CLUSTER_NAME }} \
-            --service finbert-rag-service \
+            --cluster "${CLUSTER_NAME}" \
+            --service "${SERVICE_NAME}" \
             --task-definition "${NEW_TASK_DEFINITION}" \
             --region ${{ env.AWS_REGION }}
 
           echo "⏳ Waiting for deployment to stabilize..."
           aws ecs wait services-stable \
-            --cluster ${{ env.PROD_CLUSTER_NAME }} \
-            --services finbert-rag-service \
+            --cluster "${CLUSTER_NAME}" \
+            --services "${SERVICE_NAME}" \
             --region ${{ env.AWS_REGION }}
 
           echo "✅ ECS deployment completed successfully"
 
   # ===== HEALTH CHECK & VALIDATION =====
   validate-deployment:
-    needs: [version-management, deploy-to-ecs]
+    needs: [version-management, ensure-infrastructure, deploy-to-ecs]
     if: needs.version-management.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
     
@@ -319,10 +408,14 @@ jobs:
       - name: Get Load Balancer DNS
         id: lb-dns
         run: |
-          ALB_DNS=$(aws elbv2 describe-load-balancers \
-            --query 'LoadBalancers[0].DNSName' \
-            --output text \
-            --region ${{ env.AWS_REGION }})
+          if [[ -n "${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}" && "${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}" != "null" ]]; then
+            ALB_DNS="${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}"
+          else
+            ALB_DNS=$(aws elbv2 describe-load-balancers \
+              --query 'LoadBalancers[0].DNSName' \
+              --output text \
+              --region ${{ env.AWS_REGION }})
+          fi
           
           echo "dns=${ALB_DNS}" >> $GITHUB_OUTPUT
           echo "🌐 Load Balancer DNS: ${ALB_DNS}"
