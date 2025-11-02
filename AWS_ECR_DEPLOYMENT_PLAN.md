@@ -188,7 +188,6 @@ aws ecr list-images --repository-name finbert-rag/ui --region ap-south-1
 ```yaml
 env:
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   API_IMAGE_NAME: finbert-rag/api
   UI_IMAGE_NAME: finbert-rag/ui
 ```
@@ -205,6 +204,9 @@ jobs:
         with:
           node-version: '18'
       - uses: aws-actions/configure-aws-credentials@v4
+      - run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${ACCOUNT_ID}" >> $GITHUB_OUTPUT
       - run: npm ci --ignore-scripts
         working-directory: infrastructure
       - run: |
@@ -213,6 +215,7 @@ jobs:
             --outputs-file cdk-outputs.json
         working-directory: infrastructure
 ```
+> The account id is now resolved with `aws sts get-caller-identity`, so no dedicated `AWS_ACCOUNT_ID` secret is required.
 
 **Update workflow authentication:**
 ```yaml
