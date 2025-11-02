@@ -101,6 +101,44 @@ export ECR_API_REPO="${ECR_REGISTRY}/finbert-rag/api"
 export ECR_UI_REPO="${ECR_REGISTRY}/finbert-rag/ui"
 ```
 
+### **Step 1.4: AWS Secrets Manager Configuration**
+```bash
+# Create (or update) Elasticsearch credentials secret
+cat <<'JSON' > es-prod.json
+{
+  "host": "https://your-elasticsearch-cluster.es.amazonaws.com:443",
+  "key": "base64_encoded_api_key",
+  "index": "news_finbert_embeddings"
+}
+JSON
+
+aws secretsmanager create-secret \
+  --name finbert-rag/elasticsearch/credentials \
+  --description "FinBERT Elasticsearch credentials" \
+  --secret-string file://es-prod.json \
+  --region ap-south-1
+
+# Create API token secret (HuggingFace, etc.)
+cat <<'JSON' > api-tokens.json
+{
+  "huggingface_token": "hf_xxx"
+}
+JSON
+
+aws secretsmanager create-secret \
+  --name finbert-rag/api/tokens \
+  --description "FinBERT API tokens" \
+  --secret-string file://api-tokens.json \
+  --region ap-south-1
+
+# Grant ECS task execution role read access to the secrets
+aws iam attach-role-policy \
+  --role-name FinBertRagProdStack-FinBertExecutionRoleXXXXXXXX \
+  --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
+```
+> Replace the execution role name with the value from `aws ecs describe-task-definition`.  
+> For tighter security, prefer a custom policy that only allows `secretsmanager:GetSecretValue` on the specific ARNs.
+
 ---
 
 ## 🏗️ **Phase 2: Container Build & Push**
@@ -146,13 +184,34 @@ aws ecr list-images --repository-name finbert-rag/ui --region ap-south-1
 
 ### **Step 3.1: Update GitHub Workflows for ECR**
 
-**Update `.github/workflows/production-release.yml`:**
+**Update `.github/workflows/production-release-ecr.yml`:**
 ```yaml
 env:
-  REGISTRY: <account-id>.dkr.ecr.ap-south-1.amazonaws.com
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
   API_IMAGE_NAME: finbert-rag/api
   UI_IMAGE_NAME: finbert-rag/ui
-  AWS_REGION: ap-south-1
+```
+
+> The workflow now runs an `ensure-infrastructure` job that executes `npx cdk deploy FinBertRagProdStack --require-approval never` so the ECS cluster, load balancer, task definition, and secrets wiring are always present before the container rollout begins.
+
+```yaml
+jobs:
+  ensure-infrastructure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      - uses: aws-actions/configure-aws-credentials@v4
+      - run: npm ci --ignore-scripts
+        working-directory: infrastructure
+      - run: |
+          npx cdk deploy FinBertRagProdStack \
+            --require-approval never \
+            --outputs-file cdk-outputs.json
+        working-directory: infrastructure
 ```
 
 **Update workflow authentication:**
@@ -173,16 +232,32 @@ env:
 
 **Update `infrastructure/lib/finbert-rag-stack.ts`:**
 ```typescript
-// Update container image references
-const apiImage = ecs.ContainerImage.fromEcrRepository(
-  ecr.Repository.fromRepositoryName(this, 'ApiRepo', 'finbert-rag/api'),
-  'latest'
-);
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
-const uiImage = ecs.ContainerImage.fromEcrRepository(
-  ecr.Repository.fromRepositoryName(this, 'UiRepo', 'finbert-rag/ui'),
-  'latest'
-);
+const repositoryName = props.apiRepositoryName ?? 'finbert-rag/api';
+const imageTag = props.apiImageTag ?? 'prod';
+const apiRepository = ecr.Repository.fromRepositoryAttributes(this, 'FinBertApiRepository', {
+  repositoryName,
+  repositoryArn: cdk.Stack.of(this).formatArn({
+    service: 'ecr',
+    resource: 'repository',
+    resourceName: repositoryName,
+  }),
+});
+
+const esSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertEsSecret', 'finbert-rag/elasticsearch/credentials');
+const apiTokensSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertApiTokensSecret', 'finbert-rag/api/tokens');
+
+taskImageOptions: {
+  image: ecs.ContainerImage.fromEcrRepository(apiRepository, imageTag),
+  secrets: {
+    ES_READONLY_HOST: ecs.Secret.fromSecretsManager(esSecret, 'host'),
+    ES_UNRESTRICTED_KEY: ecs.Secret.fromSecretsManager(esSecret, 'key'),
+    ES_CLOUD_INDEX: ecs.Secret.fromSecretsManager(esSecret, 'index'),
+    HUGGINGFACE_TOKEN: ecs.Secret.fromSecretsManager(apiTokensSecret, 'huggingface_token'),
+  },
+}
 ```
 
 ### **Step 3.3: Environment Variables Migration**

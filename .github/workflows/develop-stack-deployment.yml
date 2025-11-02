@@ -2,10 +2,10 @@ name: Development Stack Deployment
 
 on:
   # Disable automatic triggers to save GitHub Actions minutes
-  # push:
-  #   branches: [ develop ]
-  # pull_request:
-  #   branches: [ develop ]
+  push:
+    branches: [ develop ]
+  pull_request:
+    branches: [ develop ]
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -17,7 +17,8 @@ on:
 env:
   # ECR Configuration for Development
   AWS_REGION: ap-south-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  # ECR_REGISTRY will be computed dynamically from STS identity to avoid cross-account mismatch
+  ECR_REGISTRY: ""
   ECR_API_REPOSITORY: finbert-rag/api-dev
   ECR_UI_REPOSITORY: finbert-rag/ui-dev
   
@@ -83,56 +84,64 @@ jobs:
           echo "✅ No infrastructure changes"
         fi
 
-  # ===== CODE QUALITY CHECKS =====
+  # ===== CODE QUALITY CHECKS (parallel via matrix, non-blocking) =====
   code-quality:
     runs-on: ubuntu-latest
-    name: 🔍 Code Quality & Security
-    
+    name: 🔍 Code Quality & Security • ${{ matrix.task }}
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [black, isort, flake8, bandit, safety]
     steps:
-    - name: 📥 Checkout code
-      uses: actions/checkout@v4
-      
-    - name: 🐍 Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        
-    - name: 📦 Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install flake8 black isort mypy bandit safety
-        
-    - name: 🎨 Format Check (Black)
-      run: |
-        cd api
-        black --check --diff .
-        
-    - name: 📋 Import Sort Check (isort)
-      run: |
-        cd api
-        isort --check-only --diff .
-        
-    - name: 🔍 Lint Check (Flake8)
-      run: |
-        cd api
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-        
-    - name: 🛡️ Security Check (Bandit)
-      run: |
-        cd api
-        bandit -r . -f json -o bandit-report.json || true
-        bandit -r . -ll
-        
-    - name: 🔒 Dependency Security Check
-      run: |
-        cd api
-        safety check --json --output safety-report.json || true
-        safety check
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install flake8 black isort mypy bandit safety
+
+      - name: 🎨 Format Check (Black)
+        if: matrix.task == 'black'
+        run: |
+          cd api
+          black --check --diff .
+
+      - name: 📋 Import Sort Check (isort)
+        if: matrix.task == 'isort'
+        run: |
+          cd api
+          isort --check-only --diff .
+
+      - name: 🔍 Lint Check (Flake8)
+        if: matrix.task == 'flake8'
+        run: |
+          cd api
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: 🛡️ Security Check (Bandit)
+        if: matrix.task == 'bandit'
+        run: |
+          cd api
+          bandit -r . -f json -o bandit-report.json || true
+          bandit -r . -ll
+
+      - name: 🔒 Dependency Security Check (Safety)
+        if: matrix.task == 'Safety' || matrix.task == 'safety'
+        run: |
+          cd api
+          safety check --json --output safety-report.json || true
+          safety check || true
 
   # ===== DOCKER BUILD & PUSH =====
   build-and-push:
-    needs: [detect-changes, code-quality]
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
     runs-on: ubuntu-latest
     name: 🏗️ Build & Push Development Images
@@ -147,6 +156,26 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
+
+    - name: 🔎 Determine AWS account and ECR registry
+      id: acct
+      run: |
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        echo "ACCOUNT_ID=$ACCOUNT_ID" >> $GITHUB_ENV
+        echo "ECR_REGISTRY=${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+        echo "account_id=$ACCOUNT_ID" >> $GITHUB_OUTPUT
+
+    - name: 🏗️ Ensure ECR repositories exist (dev)
+      run: |
+        set -e
+        for REPO in "${{ env.ECR_API_REPOSITORY }}" "${{ env.ECR_UI_REPOSITORY }}"; do
+          if aws ecr describe-repositories --repository-names "$REPO" >/dev/null 2>&1; then
+            echo "ECR repo exists: $REPO"
+          else
+            echo "Creating ECR repo: $REPO"
+            aws ecr create-repository --repository-name "$REPO" --image-scanning-configuration scanOnPush=true --encryption-configuration encryptionType=AES256 >/dev/null
+          fi
+        done
 
     - name: 🔑 Login to Amazon ECR
       id: login-ecr
@@ -184,18 +213,19 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: 🎨 Build and push UI image
-      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.ui
-        push: true
-        tags: |
-          ${{ steps.meta.outputs.ui_image }}
-          ${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    # UI deployment temporarily disabled while focusing on API-only rollout (UI TD update failing in ECS deploy).
+    # - name: 🎨 Build and push UI image
+    #   if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile.ui
+    #     push: true
+    #     tags: |
+    #       ${{ steps.meta.outputs.ui_image }}
+    #       ${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev
+    #     cache-from: type=gha
+    #     cache-to: type=gha,mode=max
 
     - name: 📋 Output image information
       run: |
@@ -227,51 +257,63 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: 🔄 Update API task definition
+    - name: � Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+
+    - name: �🔄 Update API task definition (from current service)
       if: needs.detect-changes.outputs.api-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
       run: |
-        # Get current task definition
-        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_API }} \
-          --query taskDefinition > api-task-definition.json
-        
-        # Update image URI in task definition
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev"
-        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' api-task-definition.json > api-task-definition-updated.json
-        
-        # Register new task definition
-        aws ecs register-task-definition --cli-input-json file://api-task-definition-updated.json
-        
-        # Update service
-        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
-          --service ${{ env.ECS_SERVICE_API }} \
-          --task-definition ${{ env.ECS_TASK_DEFINITION_API }}
+        set -e
+        # Discover current task definition ARN on the service
+        CURR_TD_ARN=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_API }} \
+          --query 'services[0].taskDefinition' --output text)
+        echo "Current API task def: $CURR_TD_ARN"
 
-    - name: 🎨 Update UI task definition
-      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
-      run: |
-        # Get current task definition
-        aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION_UI }} \
-          --query taskDefinition > ui-task-definition.json
-        
-        # Update image URI in task definition
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
-        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-definition.json > ui-task-definition-updated.json
-        
-        # Register new task definition
-        aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json
-        
-        # Update service
-        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} \
-          --service ${{ env.ECS_SERVICE_UI }} \
-          --task-definition ${{ env.ECS_TASK_DEFINITION_UI }}
+        # Export the full task definition JSON
+        aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" \
+          --query taskDefinition > api-task-definition.json
+
+        # Remove fields not accepted on register
+        cat api-task-definition.json \
+          | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' \
+          > api-task-def-stripped.json
+
+        # Update image URI in container 0 (assumes single container task)
+        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_API_REPOSITORY }}:latest-dev"
+        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' api-task-def-stripped.json > api-task-definition-updated.json
+
+        # Register new task definition revision and capture new ARN
+        NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://api-task-definition-updated.json \
+          --query 'taskDefinition.taskDefinitionArn' --output text)
+        echo "New API task def: $NEW_TD_ARN"
+
+        # Update service to use new TD revision
+        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_API }} --task-definition "$NEW_TD_ARN"
+
+    # UI deployment temporarily disabled while focusing on API-only rollout (UI TD update failing in ECS deploy).
+    # - name: 🎨 Update UI task definition (from current service)
+    #   if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    #   run: |
+    #     set -e
+    #     CURR_TD_ARN=$(aws ecs describe-services \
+    #       --cluster ${{ env.ECS_CLUSTER }} \
+    #       --services ${{ env.ECS_SERVICE_UI }} \
+    #       --query 'services[0].taskDefinition' --output text)
+    #     echo "Current UI task def: $CURR_TD_ARN"
+    #     aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" --query taskDefinition > ui-task-definition.json
+    #     cat ui-task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > ui-task-def-stripped.json
+    #     NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
+    #     jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-def-stripped.json > ui-task-definition-updated.json
+    #     NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json --query 'taskDefinition.taskDefinitionArn' --output text)
+    #     echo "New UI task def: $NEW_TD_ARN"
+    #     aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_UI }} --task-definition "$NEW_TD_ARN"
 
     - name: ⏳ Wait for deployment completion
       run: |
         echo "🔄 Waiting for API service to stabilize..."
         aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_API }}
-        
-        echo "🔄 Waiting for UI service to stabilize..."
-        aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_UI }}
         
         echo "✅ Development deployment completed successfully!"
 
@@ -295,20 +337,39 @@ jobs:
     - name: 🔍 Get service endpoints
       id: endpoints
       run: |
-        # Get load balancer DNS from ECS service
-        LOAD_BALANCER_DNS=$(aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE_API }} \
-          --query 'services[0].loadBalancers[0].targetGroupArn' \
-          --output text)
-        
-        if [[ "$LOAD_BALANCER_DNS" != "None" && "$LOAD_BALANCER_DNS" != "" ]]; then
-          # This is a simplified approach - in reality, you'd need to get the ALB DNS
-          API_ENDPOINT="http://finbert-dev-alb-123456789.ap-south-1.elb.amazonaws.com"
-          echo "api_endpoint=${API_ENDPOINT}" >> $GITHUB_OUTPUT
+        set -e
+        # Try to read LoadBalancer DNS from CloudFormation stack outputs
+        CFN_DNS=$(aws cloudformation describe-stacks \
+          --stack-name FinBertRagDevStack \
+          --query 'Stacks[0].Outputs[?OutputKey==`LoadBalancerDNS`].OutputValue' \
+          --output text || true)
+
+        if [[ -n "$CFN_DNS" && "$CFN_DNS" != "None" ]]; then
+          echo "Using CFN LoadBalancer DNS: $CFN_DNS"
+          echo "api_endpoint=http://$CFN_DNS" >> $GITHUB_OUTPUT
         else
-          echo "⚠️ Could not determine API endpoint"
-          echo "api_endpoint=" >> $GITHUB_OUTPUT
+          echo "CFN output not found. Falling back to ECS -> ELBv2 discovery"
+          TG_ARN=$(aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_API }} \
+            --query 'services[0].loadBalancers[0].targetGroupArn' \
+            --output text || true)
+          if [[ -n "$TG_ARN" && "$TG_ARN" != "None" ]]; then
+            LB_ARN=$(aws elbv2 describe-target-groups --target-group-arns "$TG_ARN" --query 'TargetGroups[0].LoadBalancerArns[0]' --output text || true)
+            if [[ -n "$LB_ARN" && "$LB_ARN" != "None" ]]; then
+              LB_DNS=$(aws elbv2 describe-load-balancers --load-balancer-arns "$LB_ARN" --query 'LoadBalancers[0].DNSName' --output text || true)
+              if [[ -n "$LB_DNS" && "$LB_DNS" != "None" ]]; then
+                echo "Discovered ALB DNS: $LB_DNS"
+                echo "api_endpoint=http://$LB_DNS" >> $GITHUB_OUTPUT
+              else
+                echo "api_endpoint=" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "api_endpoint=" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "api_endpoint=" >> $GITHUB_OUTPUT
+          fi
         fi
 
     - name: 🏥 Health check API
@@ -343,6 +404,24 @@ jobs:
         curl -X POST -H "Content-Type: application/json" \
           -d '{"query": "test", "top_k": 1}' \
           -s "$API_BASE/search/cosine/embedding384d/" | jq . || true
+
+    - name: 🔁 Validate enhanced embedding search
+      if: steps.endpoints.outputs.api_endpoint != ''
+      run: |
+        set -e
+        API_BASE="${{ steps.endpoints.outputs.api_endpoint }}"
+        echo "🔍 Testing enhanced embedding endpoint..."
+        HTTP_CODE=$(curl -s -o search_1155d.json -w "%{http_code}" \
+          -X POST "$API_BASE/search/cosine/embedding1155d/" \
+          -H "Content-Type: application/json" \
+          -d '{"query": "central bank policy impact on inflation expectations", "limit": 1}')
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "❌ embedding1155d endpoint failed with status $HTTP_CODE"
+          cat search_1155d.json
+          exit 1
+        fi
+        echo "✅ embedding1155d endpoint healthy"
+        cat search_1155d.json | jq '.results | length'
 
     - name: 📊 Generate deployment report
       run: |

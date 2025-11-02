@@ -5,6 +5,8 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 export interface FinBertRagStackProps extends cdk.StackProps {
@@ -20,6 +22,10 @@ export interface FinBertRagStackProps extends cdk.StackProps {
     enableLogging: boolean;
     enableXRay: boolean;
     domainName?: string;
+    apiRepositoryName?: string;
+    apiImageTag?: string;
+    esSecretName?: string;
+    apiTokensSecretName?: string;
 }
 
 export class FinBertRagStack extends cdk.Stack {
@@ -75,6 +81,30 @@ export class FinBertRagStack extends cdk.Stack {
             assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
         });
 
+        const repositoryName = props.apiRepositoryName ?? (props.environment === 'prod' ? 'finbert-rag/api' : 'finbert-rag/api-dev');
+        const imageTag = props.apiImageTag ?? (props.environment === 'prod' ? 'prod' : 'latest-dev');
+        const account = props.env?.account ?? cdk.Stack.of(this).account;
+        const region = props.env?.region ?? cdk.Stack.of(this).region;
+
+        const repositoryArn = cdk.Stack.of(this).formatArn({
+            service: 'ecr',
+            resource: 'repository',
+            resourceName: repositoryName,
+            account,
+            region,
+        });
+
+        const apiRepository = ecr.Repository.fromRepositoryAttributes(this, 'FinBertApiRepository', {
+            repositoryName,
+            repositoryArn,
+        });
+
+        const esSecretName = props.esSecretName ?? 'finbert-rag/elasticsearch/credentials';
+        const apiTokensSecretName = props.apiTokensSecretName ?? 'finbert-rag/api/tokens';
+
+        const esSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertEsSecret', esSecretName);
+        const apiTokensSecret = secretsmanager.Secret.fromSecretNameV2(this, 'FinBertApiTokensSecret', apiTokensSecretName);
+
         // Create Fargate Service with Application Load Balancer
         this.service = new ecsPatterns.ApplicationLoadBalancedFargateService(this, 'FinBertService', {
             cluster: this.cluster,
@@ -86,7 +116,7 @@ export class FinBertRagStack extends cdk.Stack {
 
             // Task Definition
             taskImageOptions: {
-                image: ecs.ContainerImage.fromRegistry(`ghcr.io/pes-mtech-project/rag_api_ui/finbert-api:${props.environment === 'prod' ? 'latest' : 'develop'}`),
+                image: ecs.ContainerImage.fromEcrRepository(apiRepository, imageTag),
                 containerPort: props.containerPort,
                 containerName: 'finbert-api',
                 executionRole,
@@ -99,6 +129,14 @@ export class FinBertRagStack extends cdk.Stack {
                     'API_HOST': '0.0.0.0',
                     'API_PORT': props.containerPort.toString(),
                     'ENVIRONMENT': props.environment,
+                },
+                secrets: {
+                    'ES_READONLY_HOST': ecs.Secret.fromSecretsManager(esSecret, 'host'),
+                    'ES_CLOUD_HOST': ecs.Secret.fromSecretsManager(esSecret, 'host'),
+                    'ES_UNRESTRICTED_KEY': ecs.Secret.fromSecretsManager(esSecret, 'key'),
+                    'ES_READONLY_KEY': ecs.Secret.fromSecretsManager(esSecret, 'key'),
+                    'ES_CLOUD_INDEX': ecs.Secret.fromSecretsManager(esSecret, 'index'),
+                    'HUGGINGFACE_TOKEN': ecs.Secret.fromSecretsManager(apiTokensSecret, 'huggingface_token'),
                 },
             },
 

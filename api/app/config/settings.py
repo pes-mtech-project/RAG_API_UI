@@ -14,11 +14,14 @@ class ElasticsearchConfig:
     """Elasticsearch configuration settings"""
     
     def __init__(self):
-        self.host = os.getenv('ES_READONLY_HOST', 
-                            'https://my-elasticsearch-project-a901ed.es.asia-south1.gcp.elastic.cloud:443')
-        self.unrestricted_key = os.getenv('ES_UNRESTRICTED_KEY')
-        self.readonly_key = os.getenv('ES_READONLY_KEY', 
-                                    'ZzlOZ21aa0JBUXZGb3RVb01rLUY6blBPOVphYmE2MjVTZ1o2eGZWOUpxQQ==')
+        # Prefer new ES_READONLY_* variables but fall back to legacy ES_CLOUD_* secrets and finally the legacy default.
+        host_env = os.getenv('ES_READONLY_HOST') or os.getenv('ES_CLOUD_HOST')
+        self.host = host_env or 'https://my-elasticsearch-project-a901ed.es.asia-south1.gcp.elastic.cloud:443'
+
+        self.unrestricted_key = os.getenv('ES_UNRESTRICTED_KEY') or os.getenv('ES_CLOUD_KEY')
+
+        readonly_key_env = os.getenv('ES_READONLY_KEY') or os.getenv('ES_CLOUD_KEY')
+        self.readonly_key = readonly_key_env or 'ZzlOZ21aa0JBUXZGb3RVb01rLUY6blBPOVphYmE2MjVTZ1o2eGZWOUpxQQ=='
         
         # Determine if we're connecting to local Docker Elasticsearch
         self.is_local_docker = 'host.docker.internal' in self.host or 'localhost' in self.host
