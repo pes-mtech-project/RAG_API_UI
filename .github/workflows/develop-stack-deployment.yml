@@ -213,18 +213,19 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: 🎨 Build and push UI image
-      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./docker/Dockerfile.ui
-        push: true
-        tags: |
-          ${{ steps.meta.outputs.ui_image }}
-          ${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+    # UI deployment temporarily disabled while focusing on API-only rollout (UI TD update failing in ECS deploy).
+    # - name: 🎨 Build and push UI image
+    #   if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    #   uses: docker/build-push-action@v5
+    #   with:
+    #     context: .
+    #     file: ./docker/Dockerfile.ui
+    #     push: true
+    #     tags: |
+    #       ${{ steps.meta.outputs.ui_image }}
+    #       ${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev
+    #     cache-from: type=gha
+    #     cache-to: type=gha,mode=max
 
     - name: 📋 Output image information
       run: |
@@ -291,30 +292,28 @@ jobs:
         # Update service to use new TD revision
         aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_API }} --task-definition "$NEW_TD_ARN"
 
-    - name: 🎨 Update UI task definition (from current service)
-      if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
-      run: |
-        set -e
-        CURR_TD_ARN=$(aws ecs describe-services \
-          --cluster ${{ env.ECS_CLUSTER }} \
-          --services ${{ env.ECS_SERVICE_UI }} \
-          --query 'services[0].taskDefinition' --output text)
-        echo "Current UI task def: $CURR_TD_ARN"
-        aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" --query taskDefinition > ui-task-definition.json
-        cat ui-task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > ui-task-def-stripped.json
-        NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
-        jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-def-stripped.json > ui-task-definition-updated.json
-        NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json --query 'taskDefinition.taskDefinitionArn' --output text)
-        echo "New UI task def: $NEW_TD_ARN"
-        aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_UI }} --task-definition "$NEW_TD_ARN"
+    # UI deployment temporarily disabled while focusing on API-only rollout (UI TD update failing in ECS deploy).
+    # - name: 🎨 Update UI task definition (from current service)
+    #   if: needs.detect-changes.outputs.ui-changed == 'true' || needs.detect-changes.outputs.force-deploy == 'true'
+    #   run: |
+    #     set -e
+    #     CURR_TD_ARN=$(aws ecs describe-services \
+    #       --cluster ${{ env.ECS_CLUSTER }} \
+    #       --services ${{ env.ECS_SERVICE_UI }} \
+    #       --query 'services[0].taskDefinition' --output text)
+    #     echo "Current UI task def: $CURR_TD_ARN"
+    #     aws ecs describe-task-definition --task-definition "$CURR_TD_ARN" --query taskDefinition > ui-task-definition.json
+    #     cat ui-task-definition.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > ui-task-def-stripped.json
+    #     NEW_IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_UI_REPOSITORY }}:latest-dev"
+    #     jq --arg IMAGE "$NEW_IMAGE" '.containerDefinitions[0].image = $IMAGE' ui-task-def-stripped.json > ui-task-definition-updated.json
+    #     NEW_TD_ARN=$(aws ecs register-task-definition --cli-input-json file://ui-task-definition-updated.json --query 'taskDefinition.taskDefinitionArn' --output text)
+    #     echo "New UI task def: $NEW_TD_ARN"
+    #     aws ecs update-service --cluster ${{ env.ECS_CLUSTER }} --service ${{ env.ECS_SERVICE_UI }} --task-definition "$NEW_TD_ARN"
 
     - name: ⏳ Wait for deployment completion
       run: |
         echo "🔄 Waiting for API service to stabilize..."
         aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_API }}
-        
-        echo "🔄 Waiting for UI service to stabilize..."
-        aws ecs wait services-stable --cluster ${{ env.ECS_CLUSTER }} --services ${{ env.ECS_SERVICE_UI }}
         
         echo "✅ Development deployment completed successfully!"
 
@@ -405,6 +404,24 @@ jobs:
         curl -X POST -H "Content-Type: application/json" \
           -d '{"query": "test", "top_k": 1}' \
           -s "$API_BASE/search/cosine/embedding384d/" | jq . || true
+
+    - name: 🔁 Validate enhanced embedding search
+      if: steps.endpoints.outputs.api_endpoint != ''
+      run: |
+        set -e
+        API_BASE="${{ steps.endpoints.outputs.api_endpoint }}"
+        echo "🔍 Testing enhanced embedding endpoint..."
+        HTTP_CODE=$(curl -s -o search_1155d.json -w "%{http_code}" \
+          -X POST "$API_BASE/search/cosine/embedding1155d/" \
+          -H "Content-Type: application/json" \
+          -d '{"query": "central bank policy impact on inflation expectations", "limit": 1}')
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "❌ embedding1155d endpoint failed with status $HTTP_CODE"
+          cat search_1155d.json
+          exit 1
+        fi
+        echo "✅ embedding1155d endpoint healthy"
+        cat search_1155d.json | jq '.results | length'
 
     - name: 📊 Generate deployment report
       run: |

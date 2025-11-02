@@ -101,6 +101,44 @@ export ECR_API_REPO="${ECR_REGISTRY}/finbert-rag/api"
 export ECR_UI_REPO="${ECR_REGISTRY}/finbert-rag/ui"
 ```
 
+### **Step 1.4: AWS Secrets Manager Configuration**
+```bash
+# Create (or update) Elasticsearch credentials secret
+cat <<'JSON' > es-prod.json
+{
+  "host": "https://your-elasticsearch-cluster.es.amazonaws.com:443",
+  "key": "base64_encoded_api_key",
+  "index": "news_finbert_embeddings"
+}
+JSON
+
+aws secretsmanager create-secret \
+  --name finbert-rag/elasticsearch/credentials \
+  --description "FinBERT Elasticsearch credentials" \
+  --secret-string file://es-prod.json \
+  --region ap-south-1
+
+# Create API token secret (HuggingFace, etc.)
+cat <<'JSON' > api-tokens.json
+{
+  "huggingface_token": "hf_xxx"
+}
+JSON
+
+aws secretsmanager create-secret \
+  --name finbert-rag/api/tokens \
+  --description "FinBERT API tokens" \
+  --secret-string file://api-tokens.json \
+  --region ap-south-1
+
+# Grant ECS task execution role read access to the secrets
+aws iam attach-role-policy \
+  --role-name FinBertRagProdStack-FinBertExecutionRoleXXXXXXXX \
+  --policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite
+```
+> Replace the execution role name with the value from `aws ecs describe-task-definition`.  
+> For tighter security, prefer a custom policy that only allows `secretsmanager:GetSecretValue` on the specific ARNs.
+
 ---
 
 ## 🏗️ **Phase 2: Container Build & Push**
