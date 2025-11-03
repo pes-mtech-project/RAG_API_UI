@@ -399,6 +399,11 @@ jobs:
             )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
             > "${UPDATED_TD_FILE}"
 
+          if [[ ! -s "${UPDATED_TD_FILE}" ]]; then
+            echo "❌ Updated task definition payload is empty"
+            exit 1
+          fi
+
           NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
             --cli-input-json file://"${UPDATED_TD_FILE}" \
             --region ${{ env.AWS_REGION }} \
