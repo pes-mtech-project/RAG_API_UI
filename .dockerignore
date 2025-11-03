@@ -1,0 +1,107 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# GitHub
+.github
+!.github/workflows
+
+# Documentation
+*.md
+docs/
+documentation/
+
+# Python cache and environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv/
+
+# Jupyter Notebooks
+*.ipynb
+.ipynb_checkpoints
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test files
+tests/
+test/
+*test*
+*Test*
+
+# Data files (large datasets)
+data/
+datasets/
+*.csv
+*.json
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# Model files (can be large)
+/models/
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Node modules (if any)
+node_modules/
+
+# SSH keys
+*.pem
+*.key
+
+# Scripts (for production builds)
+scripts/
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Large files that shouldn't be in containers
+*.zip
+*.tar.gz
+*.tar
+*.gz
