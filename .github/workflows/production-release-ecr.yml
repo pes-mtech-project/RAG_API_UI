@@ -397,11 +397,24 @@ jobs:
               if .name == "finbert-api" then .image = $API_IMAGE else . end
             )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
 
-          NEW_TASK_DEFINITION=$(echo "${UPDATED_TASK_DEFINITION}" | aws ecs register-task-definition \
-            --cli-input-json file:///dev/stdin \
+          clean_json() {
+            python3 - "$1" <<'PY'
+import json, sys
+data = json.loads(sys.argv[1])
+print(json.dumps(data))
+PY
+          }
+
+          UPDATED_TD_FILE=$(mktemp)
+          clean_json "${UPDATED_TASK_DEFINITION}" "${UPDATED_TD_FILE}"
+
+          NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
+            --cli-input-json file://"${UPDATED_TD_FILE}" \
             --region ${{ env.AWS_REGION }} \
             --query 'taskDefinition.taskDefinitionArn' \
             --output text)
+
+          rm -f "${UPDATED_TD_FILE}"
 
           echo "📋 New task definition: ${NEW_TASK_DEFINITION}"
 
