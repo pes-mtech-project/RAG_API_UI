@@ -398,10 +398,11 @@ jobs:
             )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)')
 
           clean_json() {
-            python3 - "$1" <<'PY'
+            python3 - "$1" "$2" <<'PY'
 import json, sys
-data = json.loads(sys.argv[1])
-print(json.dumps(data))
+payload = json.loads(sys.argv[1])
+with open(sys.argv[2], "w") as f:
+    json.dump(payload, f)
 PY
           }
 
