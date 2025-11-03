@@ -391,6 +391,7 @@ jobs:
             --query 'taskDefinition' \
             --output json)
 
+<<<<<<< HEAD
           UPDATED_TASK_DEFINITION=$(echo "${TASK_DEFINITION_JSON}" | jq \
             --arg API_IMAGE "${API_IMAGE_URI}" \
             '.containerDefinitions = (.containerDefinitions | map(
@@ -409,6 +410,16 @@ PY
           UPDATED_TD_FILE=$(mktemp)
           clean_json "${UPDATED_TASK_DEFINITION}" "${UPDATED_TD_FILE}"
 
+=======
+          UPDATED_TD_FILE=$(mktemp)
+          echo "${TASK_DEFINITION_JSON}" | jq \
+            --arg API_IMAGE "${API_IMAGE_URI}" \
+            '.containerDefinitions = (.containerDefinitions | map(
+              if .name == "finbert-api" then .image = $API_IMAGE else . end
+            )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
+            > "${UPDATED_TD_FILE}"
+
+>>>>>>> 896e6aa (Fix ECS deploy step to write task def JSON to file)
           NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
             --cli-input-json file://"${UPDATED_TD_FILE}" \
             --region ${{ env.AWS_REGION }} \
