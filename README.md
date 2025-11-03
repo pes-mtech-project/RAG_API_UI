@@ -2,6 +2,24 @@
 
 A production-ready Financial News Retrieval-Augmented Generation (RAG) system with **modular architecture** following SOLID principles. Features advanced semantic vector search with multiple embedding dimensions, model caching optimization, and automated CI/CD pipelines.
 
+## 🧭 Sector News Agents Integration
+
+This repository now bundles the **Sector News Analysis** agent pipeline (from [`pes-mtech-project/sector-new-analysis`](https://github.com/pes-mtech-project/sector-new-analysis)) under `agents/sector_news_analysis`. The agents consume results from the FinBERT RAG API and generate sector-wise sentiment reports.
+
+```bash
+# Install agent dependencies the first time
+cd agents/sector_news_analysis
+python3 -m venv .venv && source .venv/bin/activate
+python -m pip install -r requirements.txt
+
+# Back at the repository root, run the integrated pipeline
+python scripts/run_sector_agents.py \
+  --provider mock \
+  --output-report agents/sector_news_analysis/reports/latest_sector_report.html
+```
+
+Set `FINBERT_RAG_BASE_URL` (or `SECTOR_AGENT_RAG_BASE_URL`) to point at your API if it is not running on `http://localhost:8000`. The pipeline will call the `/search/cosine/embedding1155d/` endpoint by default; override with `SECTOR_AGENT_RAG_ENDPOINT` if needed.
+
 ## 🎯 Quick Start
 
 ### Production Release
