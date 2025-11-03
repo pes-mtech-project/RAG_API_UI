@@ -463,9 +463,9 @@ jobs:
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking health endpoint..."
             
-            if curl -f -s "https://${ALB_DNS}/health" > /dev/null; then
+            if curl -f -s "http://${ALB_DNS}/health" > /dev/null; then
               echo "✅ Health check passed!"
-              curl -s "https://${ALB_DNS}/health" | jq '.'
+              curl -s "http://${ALB_DNS}/health" | jq '.'
               break
             else
               echo "⏳ Health check failed, waiting 10 seconds..."
@@ -488,21 +488,21 @@ jobs:
 
           # Test 384d embedding endpoint
           echo "Testing 384d endpoint..."
-          curl -X POST "https://${ALB_DNS}/search/cosine/embedding384d/" \
+          curl -X POST "http://${ALB_DNS}/search/cosine/embedding384d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "artificial intelligence investment", "size": 1}' \
             -f -s | jq '.results | length'
 
           # Test 768d embedding endpoint
           echo "Testing 768d endpoint..."
-          curl -X POST "https://${ALB_DNS}/search/cosine/embedding768d/" \
+          curl -X POST "http://${ALB_DNS}/search/cosine/embedding768d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "financial market analysis", "size": 1}' \
             -f -s | jq '.results | length'
 
           # Test 1155d enhanced endpoint
           echo "Testing 1155d endpoint..."
-          curl -X POST "https://${ALB_DNS}/search/cosine/embedding1155d/" \
+          curl -X POST "http://${ALB_DNS}/search/cosine/embedding1155d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "sovereign debt instruments", "size": 1}' \
             -f -s | jq '.results | length'
@@ -519,7 +519,7 @@ jobs:
           for endpoint in "embedding384d" "embedding768d" "embedding1155d"; do
             echo "Testing ${endpoint} performance..."
             
-            response_time=$(curl -X POST "https://${ALB_DNS}/search/cosine/${endpoint}/" \
+            response_time=$(curl -X POST "http://${ALB_DNS}/search/cosine/${endpoint}/" \
               -H "Content-Type: application/json" \
               -d '{"query": "performance test", "size": 1}' \
               -w "%{time_total}" -s -o /dev/null)
