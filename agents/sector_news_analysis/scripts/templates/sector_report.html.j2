@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #111827; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    .muted { color: #6B7280; font-size: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(360px,1fr)); gap: 16px; margin-top: 16px; }
+    .card { border: 1px solid #E5E7EB; border-radius: 12px; padding: 16px; background: #fff; }
+    .label { font-weight: 600; padding: 2px 8px; border-radius: 999px; display: inline-block; }
+    .UP { background: #DCFCE7; color: #065F46; }
+    .DOWN { background: #FEE2E2; color: #7F1D1D; }
+    .NO_IMPACT { background: #E5E7EB; color: #111827; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #F3F4F6; vertical-align: top; }
+    th { color: #374151; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .chip { background:#F3F4F6; padding:2px 8px; border-radius:999px; font-size:12px; color:#374151; }
+    footer { margin-top: 32px; color: #6B7280; font-size: 12px; }
+    .kpi { display:flex; gap:12px; margin-top:6px; }
+    .kpi div { background:#F9FAFB; border:1px solid #E5E7EB; border-radius:10px; padding:8px 10px; }
+    code { background:#F3F4F6; padding: 2px 6px; border-radius: 6px; }
+    details { background:#F9FAFB; border:1px solid #E5E7EB; border-radius:10px; padding:8px 10px; margin-top:10px; }
+    summary { cursor: pointer; font-weight: 600; }
+    .news { margin-top: 8px; }
+    .news-item { padding: 8px 0; border-top: 1px dashed #E5E7EB; }
+    .news-item:first-child { border-top: none; }
+    .news-head { font-weight: 600; }
+    .muted-row { color:#6B7280; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>{{ title }}</h1>
+  <div class="muted">Generated {{ generated_at }}</div>
+
+  <div class="grid">
+  {% for sector, data in summary.items() %}
+    {% set label = data.get("label","NO_IMPACT") %}
+    {% set top_ids = data.get("top_signals") or [] %}
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h2 style="margin:0;font-size:18px;">{{ sector }}</h2>
+        <span class="label {{ label }}">{{ label }}</span>
+      </div>
+      <div class="kpi">
+        <div><strong>Weighted Mean</strong><br>{{ data.get("weighted_mean","—") }}</div>
+        <div><strong>Consensus</strong><br>{{ (data.get("consensus") * 100) | round(1, 'common') if data.get("consensus") is not none else "—" }}%</div>
+        <div><strong>Confidence</strong><br>{{ (data.get("confidence") * 100) | round(1, 'common') if data.get("confidence") is not none else "—" }}%</div>
+        <div><strong>Signals</strong><br>{{ data.get("n_signals","—") }}</div>
+      </div>
+      <table>
+        <tr><th style="width:120px;">Rationale</th><td>{{ data.get("rationale","—") }}</td></tr>
+        <tr><th>Top Signals</th>
+          <td>
+            <div class="chips">
+              {% if top_ids %}
+                {% for s in top_ids %}
+                  <span class="chip">{{ s }}</span>
+                {% endfor %}
+              {% else %}—{% endif %}
+            </div>
+          </td>
+        </tr>
+        <tr><th>Thresholds</th>
+          <td><code>{{ data.get("thresholds_used", {}) }}</code></td>
+        </tr>
+      </table>
+
+      {% if top_ids %}
+      <details>
+        <summary>News details ({{ top_ids|length }})</summary>
+        <div class="news">
+          {% for nid in top_ids %}
+            {% set norm = (nid|string|lower|replace(' ','')|regex_replace('[^0-9a-zA-Z]+','')) %}
+            {% set news = news_index.get(nid) or news_index.get(nid|string|trim) or news_index_norm.get(norm) %}
+            {% if news %}
+              <div class="news-item">
+                <div class="news-head">{{ news.get("headline","") }}</div>
+                <div class="muted-row">{{ (news.get("datetime","") or "")[:10] }} • {{ news.get("source","") }} • ID: {{ news.get("id","") }}</div>
+                <div class="news-body">{{ news.get("summary","") or "—" }}</div>
+              </div>
+            {% else %}
+              <div class="news-item">
+                <div class="news-head">ID: {{ nid }}</div>
+                <div class="muted-row">No matching news found in index.</div>
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+
+  <footer>
+    Report aggregates Agent-2 sector decisions. Includes resolved news details for top signals when provided via --news.
+  </footer>
+</body>
+</html>

@@ -24,6 +24,13 @@ new FinBertRagStack(app, 'FinBertRagDevStack', {
     enableLogging: true,
     enableXRay: false,
     domainName: undefined, // No custom domain for dev
+    uiServiceName: 'finbert-ui-dev',
+    uiContainerPort: 8501,
+    uiDesiredCount: 1,
+    uiMinCapacity: 1,
+    uiMaxCapacity: 2,
+    uiTargetCpuUtilization: 60,
+    uiTargetMemoryUtilization: 70,
 });
 
 // Production Environment
@@ -45,4 +52,11 @@ new FinBertRagStack(app, 'FinBertRagProdStack', {
     enableLogging: true,
     enableXRay: true,
     domainName: undefined, // Can be configured later
+    uiServiceName: 'finbert-ui-prod',
+    uiContainerPort: 8501,
+    uiDesiredCount: 1,
+    uiMinCapacity: 1,
+    uiMaxCapacity: 3,
+    uiTargetCpuUtilization: 50,
+    uiTargetMemoryUtilization: 60,
 });

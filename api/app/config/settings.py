@@ -22,6 +22,7 @@ class ElasticsearchConfig:
 
         readonly_key_env = os.getenv('ES_READONLY_KEY') or os.getenv('ES_CLOUD_KEY')
         self.readonly_key = readonly_key_env or 'ZzlOZ21aa0JBUXZGb3RVb01rLUY6blBPOVphYmE2MjVTZ1o2eGZWOUpxQQ=='
+        self.search_config_index = os.getenv('SEARCH_CONFIG_INDEX', 'finbert-search-configs')
         
         # Determine if we're connecting to local Docker Elasticsearch
         self.is_local_docker = 'host.docker.internal' in self.host or 'localhost' in self.host

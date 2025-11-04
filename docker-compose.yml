@@ -15,8 +15,8 @@ services:
       - API_PORT=8000
       - FINBERT_MODEL_PATH=/app/models/finbert
       - CACHE_SIZE=1000
-      - ES_READONLY_HOST=https://host.docker.internal:9200
-      - ES_UNRESTRICTED_KEY=T2ZaUnFaa0ItWVh0ck9TWVNiakY6eVo4VGN6YTBSLWEzQ2dSTlZTV1RqUQ==
+      - ES_READONLY_HOST=https://my-elasticsearch-project-ef2054.es.us-central1.gcp.elastic.cloud:443
+      - ES_UNRESTRICTED_KEY=SDlLRVA1b0JjSy1TVFNMcDczSGI6c1RmUFlUWXlPVU5ld05vbkNGY1AtZw==
     volumes:
       - ./.env:/app/.env.docker
       - ./models:/app/models

@@ -99,9 +99,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       cluster_name: ${{ steps.cdk.outputs.cluster_name }}
-      service_name: ${{ steps.cdk.outputs.service_name }}
-      load_balancer_dns: ${{ steps.cdk.outputs.load_balancer_dns }}
-      task_definition: ${{ steps.ecs.outputs.task_definition }}
+      api_service_name: ${{ steps.cdk.outputs.api_service_name }}
+      api_load_balancer_dns: ${{ steps.cdk.outputs.api_load_balancer_dns }}
+      api_task_definition: ${{ steps.ecs.outputs.api_task_definition }}
+      ui_service_name: ${{ steps.cdk.outputs.ui_service_name }}
+      ui_load_balancer_dns: ${{ steps.cdk.outputs.ui_load_balancer_dns }}
+      ui_task_definition: ${{ steps.ecs.outputs.ui_task_definition }}
 
     steps:
       - name: Checkout repository
@@ -148,8 +151,10 @@ jobs:
         run: |
           STACK_OUTPUTS=$(cat cdk-outputs.json)
           CLUSTER_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.ClusterName')
-          SERVICE_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.ServiceName')
-          ALB_DNS=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.LoadBalancerDNS')
+          API_SERVICE_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.ServiceName // ""')
+          API_ALB_DNS=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.LoadBalancerDNS // ""')
+          UI_SERVICE_NAME=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.UiServiceName // ""')
+          UI_ALB_DNS=$(echo "${STACK_OUTPUTS}" | jq -r '.FinBertRagProdStack.UiLoadBalancerDNS // ""')
 
           if [[ -z "${CLUSTER_NAME}" || "${CLUSTER_NAME}" == "null" ]]; then
             echo "❌ Failed to resolve ECS cluster name from CDK outputs"
@@ -157,40 +162,62 @@ jobs:
           fi
 
           echo "cluster_name=${CLUSTER_NAME}" >> $GITHUB_OUTPUT
-          echo "service_name=${SERVICE_NAME}" >> $GITHUB_OUTPUT
-          echo "load_balancer_dns=${ALB_DNS}" >> $GITHUB_OUTPUT
+          echo "api_service_name=${API_SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "api_load_balancer_dns=${API_ALB_DNS}" >> $GITHUB_OUTPUT
+          echo "ui_service_name=${UI_SERVICE_NAME}" >> $GITHUB_OUTPUT
+          echo "ui_load_balancer_dns=${UI_ALB_DNS}" >> $GITHUB_OUTPUT
 
       - name: Discover current task definition
         id: ecs
         env:
           CLUSTER_NAME: ${{ steps.cdk.outputs.cluster_name }}
-          SERVICE_NAME: ${{ steps.cdk.outputs.service_name }}
+          API_SERVICE_NAME: ${{ steps.cdk.outputs.api_service_name }}
+          UI_SERVICE_NAME: ${{ steps.cdk.outputs.ui_service_name }}
         run: |
-          if [[ -z "${SERVICE_NAME}" || "${SERVICE_NAME}" == "null" ]]; then
-            echo "⚠️ Service name not exported by CDK. Attempting lookup..."
-            SERVICE_NAME=$(aws ecs list-services \
+          if [[ -z "${API_SERVICE_NAME}" || "${API_SERVICE_NAME}" == "null" ]]; then
+            echo "⚠️ API service name not exported by CDK. Attempting lookup..."
+            API_SERVICE_NAME=$(aws ecs list-services \
               --cluster "${CLUSTER_NAME}" \
               --region ${{ env.AWS_REGION }} \
               --query 'serviceArns[0]' --output text | awk -F'/' '{print $NF}')
-            if [[ -z "${SERVICE_NAME}" || "${SERVICE_NAME}" == "None" ]]; then
-              echo "❌ Unable to resolve ECS service name"
+            if [[ -z "${API_SERVICE_NAME}" || "${API_SERVICE_NAME}" == "None" ]]; then
+              echo "❌ Unable to resolve ECS API service name"
               exit 1
             fi
           fi
 
-          TASK_DEFINITION=$(aws ecs describe-services \
+          API_TASK_DEFINITION=$(aws ecs describe-services \
             --cluster "${CLUSTER_NAME}" \
-            --services "${SERVICE_NAME}" \
+            --services "${API_SERVICE_NAME}" \
             --region ${{ env.AWS_REGION }} \
             --query 'services[0].taskDefinition' \
             --output text)
 
-          if [[ -z "${TASK_DEFINITION}" || "${TASK_DEFINITION}" == "None" ]]; then
-            echo "❌ Failed to retrieve current task definition for ${SERVICE_NAME}"
+          if [[ -z "${API_TASK_DEFINITION}" || "${API_TASK_DEFINITION}" == "None" ]]; then
+            echo "❌ Failed to retrieve current task definition for ${API_SERVICE_NAME}"
             exit 1
           fi
 
-          echo "task_definition=${TASK_DEFINITION}" >> $GITHUB_OUTPUT
+          echo "api_task_definition=${API_TASK_DEFINITION}" >> $GITHUB_OUTPUT
+          echo "api_service_name=${API_SERVICE_NAME}" >> $GITHUB_OUTPUT
+
+          if [[ -n "${UI_SERVICE_NAME}" && "${UI_SERVICE_NAME}" != "null" ]]; then
+            UI_TASK_DEFINITION=$(aws ecs describe-services \
+              --cluster "${CLUSTER_NAME}" \
+              --services "${UI_SERVICE_NAME}" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'services[0].taskDefinition' \
+              --output text)
+
+            if [[ -z "${UI_TASK_DEFINITION}" || "${UI_TASK_DEFINITION}" == "None" ]]; then
+              echo "⚠️ Unable to retrieve task definition for ${UI_SERVICE_NAME}. UI deployment will be skipped."
+            else
+              echo "ui_task_definition=${UI_TASK_DEFINITION}" >> $GITHUB_OUTPUT
+              echo "ui_service_name=${UI_SERVICE_NAME}" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "ℹ️ UI service outputs not present, skipping UI task definition discovery."
+          fi
 
   # ===== BUILD AND PUSH TO ECR =====
   build-and-push:
@@ -377,56 +404,108 @@ jobs:
 
           VERSION="${{ needs.version-management.outputs.version }}"
           CLUSTER_NAME="${{ needs.ensure-infrastructure.outputs.cluster_name }}"
-          SERVICE_NAME="${{ needs.ensure-infrastructure.outputs.service_name }}"
-          CURRENT_TASK_DEFINITION="${{ needs.ensure-infrastructure.outputs.task_definition }}"
+          API_SERVICE_NAME="${{ needs.ensure-infrastructure.outputs.api_service_name }}"
+          API_TASK_DEFINITION="${{ needs.ensure-infrastructure.outputs.api_task_definition }}"
+          UI_SERVICE_NAME="${{ needs.ensure-infrastructure.outputs.ui_service_name }}"
+          UI_TASK_DEFINITION="${{ needs.ensure-infrastructure.outputs.ui_task_definition }}"
           ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
           ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           API_IMAGE_URI="${ECR_REGISTRY}/${{ env.API_IMAGE_NAME }}:${VERSION}"
+          UI_IMAGE_URI="${ECR_REGISTRY}/${{ env.UI_IMAGE_NAME }}:${VERSION}"
 
-          echo "🚀 Deploying ${API_IMAGE_URI} to ${SERVICE_NAME} on ${CLUSTER_NAME}"
+          SERVICES_TO_WAIT=()
 
-          TASK_DEFINITION_JSON=$(aws ecs describe-task-definition \
-            --task-definition "${CURRENT_TASK_DEFINITION}" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'taskDefinition' \
-            --output json)
+          update_service_image() {
+            local label="$1"
+            local service_name="$2"
+            local current_task_definition="$3"
+            local container_name="$4"
+            local new_image="$5"
 
-          UPDATED_TD_FILE=$(mktemp)
-          echo "${TASK_DEFINITION_JSON}" | jq \
-            --arg API_IMAGE "${API_IMAGE_URI}" \
-            '.containerDefinitions = (.containerDefinitions | map(
-              if .name == "finbert-api" then .image = $API_IMAGE else . end
-            )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
-            > "${UPDATED_TD_FILE}"
+            if [[ -z "${service_name}" || "${service_name}" == "null" ]]; then
+              echo "ℹ️ ${label} service name not provided. Skipping."
+              return
+            fi
 
-          if [[ ! -s "${UPDATED_TD_FILE}" ]]; then
-            echo "❌ Updated task definition payload is empty"
-            exit 1
+            local effective_task_definition="${current_task_definition}"
+            if [[ -z "${effective_task_definition}" || "${effective_task_definition}" == "None" || "${effective_task_definition}" == "null" ]]; then
+              echo "⚠️ Task definition for ${label} not supplied. Attempting lookup."
+              effective_task_definition=$(aws ecs describe-services \
+                --cluster "${CLUSTER_NAME}" \
+                --services "${service_name}" \
+                --region ${{ env.AWS_REGION }} \
+                --query 'services[0].taskDefinition' \
+                --output text)
+            fi
+
+            if [[ -z "${effective_task_definition}" || "${effective_task_definition}" == "None" ]]; then
+              echo "❌ Unable to resolve task definition for ${label} (${service_name})."
+              return
+            fi
+
+            echo "🚀 Deploying ${label} image ${new_image} to ${service_name} on ${CLUSTER_NAME}"
+
+            local task_definition_json
+            task_definition_json=$(aws ecs describe-task-definition \
+              --task-definition "${effective_task_definition}" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'taskDefinition' \
+              --output json)
+
+            local updated_td_file
+            updated_td_file=$(mktemp)
+            echo "${task_definition_json}" | jq \
+              --arg IMAGE "${new_image}" \
+              --arg CONTAINER "${container_name}" \
+              '.containerDefinitions = (.containerDefinitions | map(
+                if .name == $CONTAINER then .image = $IMAGE else . end
+              )) | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .placementConstraints, .compatibilities, .registeredAt, .registeredBy)' \
+              > "${updated_td_file}"
+
+            if [[ ! -s "${updated_td_file}" ]]; then
+              echo "❌ Updated task definition payload for ${label} is empty"
+              rm -f "${updated_td_file}"
+              exit 1
+            fi
+
+            local new_task_definition
+            new_task_definition=$(aws ecs register-task-definition \
+              --cli-input-json file://"${updated_td_file}" \
+              --region ${{ env.AWS_REGION }} \
+              --query 'taskDefinition.taskDefinitionArn' \
+              --output text)
+
+            rm -f "${updated_td_file}"
+
+            echo "📋 ${label} task definition registered: ${new_task_definition}"
+
+            aws ecs update-service \
+              --cluster "${CLUSTER_NAME}" \
+              --service "${service_name}" \
+              --task-definition "${new_task_definition}" \
+              --region ${{ env.AWS_REGION }}
+
+            SERVICES_TO_WAIT+=("${service_name}")
+          }
+
+          update_service_image "API" "${API_SERVICE_NAME}" "${API_TASK_DEFINITION}" "finbert-api" "${API_IMAGE_URI}"
+
+          if [[ -n "${UI_SERVICE_NAME}" && "${UI_SERVICE_NAME}" != "null" ]]; then
+            update_service_image "UI" "${UI_SERVICE_NAME}" "${UI_TASK_DEFINITION}" "finbert-ui" "${UI_IMAGE_URI}"
+          else
+            echo "ℹ️ UI service not configured for deployment workflow run."
           fi
 
-          NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
-            --cli-input-json file://"${UPDATED_TD_FILE}" \
-            --region ${{ env.AWS_REGION }} \
-            --query 'taskDefinition.taskDefinitionArn' \
-            --output text)
-
-          rm -f "${UPDATED_TD_FILE}"
-
-          echo "📋 New task definition: ${NEW_TASK_DEFINITION}"
-
-          aws ecs update-service \
-            --cluster "${CLUSTER_NAME}" \
-            --service "${SERVICE_NAME}" \
-            --task-definition "${NEW_TASK_DEFINITION}" \
-            --region ${{ env.AWS_REGION }}
-
-          echo "⏳ Waiting for deployment to stabilize..."
-          aws ecs wait services-stable \
-            --cluster "${CLUSTER_NAME}" \
-            --services "${SERVICE_NAME}" \
-            --region ${{ env.AWS_REGION }}
-
-          echo "✅ ECS deployment completed successfully"
+          if (( ${#SERVICES_TO_WAIT[@]} > 0 )); then
+            echo "⏳ Waiting for services to stabilize: ${SERVICES_TO_WAIT[*]}"
+            aws ecs wait services-stable \
+              --cluster "${CLUSTER_NAME}" \
+              --services "${SERVICES_TO_WAIT[@]}" \
+              --region ${{ env.AWS_REGION }}
+            echo "✅ ECS deployment completed successfully"
+          else
+            echo "ℹ️ No ECS services updated during this run."
+          fi
 
   # ===== HEALTH CHECK & VALIDATION =====
   validate-deployment:
@@ -445,21 +524,32 @@ jobs:
       - name: Get Load Balancer DNS
         id: lb-dns
         run: |
-          if [[ -n "${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}" && "${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}" != "null" ]]; then
-            ALB_DNS="${{ needs.ensure-infrastructure.outputs.load_balancer_dns }}"
-          else
-            ALB_DNS=$(aws elbv2 describe-load-balancers \
+          API_DNS="${{ needs.ensure-infrastructure.outputs.api_load_balancer_dns }}"
+          UI_DNS="${{ needs.ensure-infrastructure.outputs.ui_load_balancer_dns }}"
+
+          if [[ -z "${API_DNS}" || "${API_DNS}" == "null" ]]; then
+            API_DNS=$(aws elbv2 describe-load-balancers \
               --query 'LoadBalancers[0].DNSName' \
               --output text \
               --region ${{ env.AWS_REGION }})
           fi
+
+          if [[ "${UI_DNS}" == "null" ]]; then
+            UI_DNS=""
+          fi
           
-          echo "dns=${ALB_DNS}" >> $GITHUB_OUTPUT
-          echo "🌐 Load Balancer DNS: ${ALB_DNS}"
+          echo "api_dns=${API_DNS}" >> $GITHUB_OUTPUT
+          echo "ui_dns=${UI_DNS}" >> $GITHUB_OUTPUT
+          echo "🌐 API Load Balancer DNS: ${API_DNS}"
+          if [[ -n "${UI_DNS}" ]]; then
+            echo "🎨 UI Load Balancer DNS: ${UI_DNS}"
+          else
+            echo "🎨 UI Load Balancer DNS: (not configured)"
+          fi
 
       - name: Health Check
         run: |
-          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          API_DNS="${{ steps.lb-dns.outputs.api_dns }}"
           MAX_ATTEMPTS=30
           ATTEMPT=1
 
@@ -468,9 +558,9 @@ jobs:
           while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
             echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking health endpoint..."
             
-            if curl -f -s "http://${ALB_DNS}/health" > /dev/null; then
+            if curl -f -s "http://${API_DNS}/health" > /dev/null; then
               echo "✅ Health check passed!"
-              curl -s "http://${ALB_DNS}/health" | jq '.'
+              curl -s "http://${API_DNS}/health" | jq '.'
               break
             else
               echo "⏳ Health check failed, waiting 10 seconds..."
@@ -487,36 +577,72 @@ jobs:
 
       - name: API Endpoint Testing
         run: |
-          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          API_DNS="${{ steps.lb-dns.outputs.api_dns }}"
           
           echo "🧪 Testing API endpoints..."
 
           # Test 384d embedding endpoint
           echo "Testing 384d endpoint..."
-          curl -X POST "http://${ALB_DNS}/search/cosine/embedding384d/" \
+          curl -X POST "http://${API_DNS}/search/cosine/embedding384d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "artificial intelligence investment", "size": 1}' \
             -f -s | jq '.results | length'
 
           # Test 768d embedding endpoint
           echo "Testing 768d endpoint..."
-          curl -X POST "http://${ALB_DNS}/search/cosine/embedding768d/" \
+          curl -X POST "http://${API_DNS}/search/cosine/embedding768d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "financial market analysis", "size": 1}' \
             -f -s | jq '.results | length'
 
           # Test 1155d enhanced endpoint
           echo "Testing 1155d endpoint..."
-          curl -X POST "http://${ALB_DNS}/search/cosine/embedding1155d/" \
+          curl -X POST "http://${API_DNS}/search/cosine/embedding1155d/" \
             -H "Content-Type: application/json" \
             -d '{"query": "sovereign debt instruments", "size": 1}' \
             -f -s | jq '.results | length'
 
           echo "✅ All API endpoints responding successfully"
 
+      - name: UI Health Check
+        if: ${{ steps.lb-dns.outputs.ui_dns != '' && steps.lb-dns.outputs.ui_dns != 'null' }}
+        run: |
+          UI_DNS="${{ steps.lb-dns.outputs.ui_dns }}"
+          MAX_ATTEMPTS=20
+          ATTEMPT=1
+
+          echo "🔍 Starting Streamlit UI health validation..."
+          
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS: Checking /_stcore/health..."
+            
+            if curl -f -s "http://${UI_DNS}/_stcore/health" > /dev/null; then
+              echo "✅ UI health check passed!"
+              break
+            else
+              echo "⏳ UI health check failed, waiting 10 seconds..."
+              sleep 10
+            fi
+            
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          if [ $ATTEMPT -gt $MAX_ATTEMPTS ]; then
+            echo "❌ UI health check failed after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+      - name: UI Endpoint Smoke Test
+        if: ${{ steps.lb-dns.outputs.ui_dns != '' && steps.lb-dns.outputs.ui_dns != 'null' }}
+        run: |
+          UI_DNS="${{ steps.lb-dns.outputs.ui_dns }}"
+          echo "🧪 Fetching Streamlit UI root..."
+          curl -f -s "http://${UI_DNS}/" > /dev/null
+          echo "✅ Streamlit UI responding successfully"
+
       - name: Performance Validation
         run: |
-          ALB_DNS="${{ steps.lb-dns.outputs.dns }}"
+          API_DNS="${{ steps.lb-dns.outputs.api_dns }}"
           
           echo "⚡ Performance validation..."
           
@@ -524,7 +650,7 @@ jobs:
           for endpoint in "embedding384d" "embedding768d" "embedding1155d"; do
             echo "Testing ${endpoint} performance..."
             
-            response_time=$(curl -X POST "http://${ALB_DNS}/search/cosine/${endpoint}/" \
+            response_time=$(curl -X POST "http://${API_DNS}/search/cosine/${endpoint}/" \
               -H "Content-Type: application/json" \
               -d '{"query": "performance test", "size": 1}' \
               -w "%{time_total}" -s -o /dev/null)

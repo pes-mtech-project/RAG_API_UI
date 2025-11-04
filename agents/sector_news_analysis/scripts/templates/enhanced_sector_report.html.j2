@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 24px;
+      color: #1f2937;
+      background: #f8fafc;
+      line-height: 1.6;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 32px;
+      border-radius: 16px;
+      margin-bottom: 32px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 2.5rem;
+      font-weight: 700;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    .header .subtitle {
+      margin: 8px 0 0 0;
+      opacity: 0.9;
+      font-size: 1.1rem;
+    }
+    .summary-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .stat-label {
+      color: #6b7280;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+      gap: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+      border: 1px solid #e5e7eb;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 15px rgba(0,0,0,0.1);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #f3f4f6;
+    }
+    .sector-name {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #111827;
+      margin: 0;
+    }
+    .label {
+      font-weight: 700;
+      padding: 6px 16px;
+      border-radius: 20px;
+      display: inline-block;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .UP {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+    }
+    .DOWN {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+      box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);
+    }
+    .NO_IMPACT {
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .kpi-item {
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: 8px;
+      text-align: center;
+      border: 1px solid #e5e7eb;
+    }
+    .kpi-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .kpi-label {
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .confidence-high { color: #059669; }
+    .confidence-medium { color: #d97706; }
+    .confidence-low { color: #dc2626; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      background: white;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: #374151;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .rationale {
+      background: #f8fafc;
+      padding: 16px;
+      border-radius: 8px;
+      border-left: 4px solid #3b82f6;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .chip {
+      background: linear-gradient(135deg, #e0e7ff, #c7d2fe);
+      color: #3730a3;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 0.8rem;
+      font-weight: 500;
+    }
+    .news-section {
+      margin-top: 20px;
+    }
+    details {
+      background: #f8fafc;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-top: 16px;
+    }
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 12px 16px;
+      background: #f3f4f6;
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+    .news-item {
+      padding: 16px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .news-item:last-child {
+      border-bottom: none;
+    }
+    .news-head {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: #111827;
+    }
+    .news-summary {
+      color: #4b5563;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    .news-meta {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-bottom: 8px;
+    }
+    .muted-row {
+      color: #6b7280;
+      font-size: 0.8rem;
+    }
+    footer {
+      margin-top: 48px;
+      text-align: center;
+      color: #6b7280;
+      font-size: 0.9rem;
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .thresholds {
+      background: #f0f9ff;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #0ea5e9;
+      font-family: 'Courier New', monospace;
+      font-size: 0.8rem;
+    }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: 1fr; }
+      .header { padding: 24px; }
+      .header h1 { font-size: 2rem; }
+      .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{ title }}</h1>
+    <div class="subtitle">AI-Powered Sector Intelligence Report</div>
+  </div>
+
+  <div class="summary-stats">
+    <div class="stat-card">
+      <div class="stat-number">{{ processed_sectors|length }}</div>
+      <div class="stat-label">Sectors Analyzed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">
+        {% set up_count = processed_sectors|selectattr('label', 'equalto', 'UP')|list|length %}
+        {{ up_count }}
+      </div>
+      <div class="stat-label">Positive Outlook</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">
+        {% set down_count = processed_sectors|selectattr('label', 'equalto', 'DOWN')|list|length %}
+        {{ down_count }}
+      </div>
+      <div class="stat-label">Negative Outlook</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number">
+        {% set neutral_count = processed_sectors|selectattr('label', 'equalto', 'NO_IMPACT')|list|length %}
+        {{ neutral_count }}
+      </div>
+      <div class="stat-label">Neutral Outlook</div>
+    </div>
+  </div>
+
+  <div class="grid">
+  {% for sector_data in processed_sectors %}
+    <div class="card">
+      <div class="card-header">
+        <h2 class="sector-name">{{ sector_data.sector }}</h2>
+        {{ sector_data.sector_label_html|safe }}
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-item">
+          <div class="kpi-value">{{ sector_data.weighted_mean }}</div>
+          <div class="kpi-label">Weighted Mean</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-value">{{ sector_data.consensus }}</div>
+          <div class="kpi-label">Consensus</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-value">{{ sector_data.confidence|safe }}</div>
+          <div class="kpi-label">Confidence</div>
+        </div>
+        <div class="kpi-item">
+          <div class="kpi-value">{{ sector_data.n_signals }}</div>
+          <div class="kpi-label">Signals</div>
+        </div>
+      </div>
+
+      <table>
+        <tr>
+          <th>Rationale</th>
+          <td>
+            <div class="rationale">
+              {{ sector_data.rationale|safe }}
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th>Top Signals</th>
+          <td>
+            <div class="chips">
+              {% for signal in sector_data.top_signals %}
+                {% if signal %}
+                  <span class="chip">{{ signal }}</span>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <th>Thresholds</th>
+          <td>
+            <div class="thresholds">
+              <strong>Up:</strong> {{ sector_data.thresholds_used.get('up', 'N/A') }} |
+              <strong>Down:</strong> {{ sector_data.thresholds_used.get('down', 'N/A') }} |
+              <strong>Consensus:</strong> {{ sector_data.thresholds_used.get('consensus', 'N/A') }}
+            </div>
+          </td>
+        </tr>
+      </table>
+
+      {% if sector_data.news_items %}
+      <div class="news-section">
+        <details>
+          <summary>📊 Supporting News Analysis ({{ sector_data.news_items|length }} items)</summary>
+          {% for news_item in sector_data.news_items %}
+            {{ news_item|safe }}
+          {% endfor %}
+        </details>
+      </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+  </div>
+
+  <footer>
+    <strong>Generated:</strong> {{ generated_at }} |
+    <strong>Report Type:</strong> Enhanced Agent-2 Sector Intelligence |
+    <strong>Data Sources:</strong> Real-time News Analysis + Few-shot Learning
+    <br><br>
+    <em>This report aggregates AI-powered sector decisions with detailed explainability and supporting evidence from news analysis.</em>
+  </footer>
+</body>
+</html>

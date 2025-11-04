@@ -256,6 +256,7 @@ class ElasticsearchService:
                 "knn": {
                     "field": field_name,
                     "query_vector": query_vector,
+                    "k": size,
                     "num_candidates": size * 5
                 },
                 "size": size,
@@ -289,7 +290,8 @@ class ElasticsearchService:
                     "rag_doc_url": f"https://my-elasticsearch-project-a901ed.kb.asia-south1.gcp.elastic.cloud/app/discover#/doc/news_finbert_embeddings/news_finbert_embeddings?id={hit.get('_id', '')}",
                     "sentiment": source.get('sentiment', {"label": "neutral", "score": 0.0}),
                     "themes": self._safe_list_conversion(source.get('v2_themes') or source.get('themes', [])),
-                    "organizations": self._safe_list_conversion(source.get('organizations', []))
+                    "organizations": self._safe_list_conversion(source.get('organizations', [])),
+                    "source_index": hit.get('_index', '')
                 }
                 results.append(result)
             

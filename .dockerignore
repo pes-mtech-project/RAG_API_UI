@@ -70,6 +70,8 @@ datasets/
 
 # Model files (can be large)
 /models/
+!api/app/models/
+!api/app/models/**
 *.bin
 *.safetensors
 *.pt

@@ -25,19 +25,67 @@ class SearchService:
         self.es_service = elasticsearch_service
         self.embedding_service = embedding_service
     
-    async def search_with_embedding_384d(self, query: str, limit: int = 10, min_score: float = 0.5):
+    async def search_with_embedding_384d(
+        self,
+        query: str,
+        limit: int = 10,
+        min_score: float = 0.5,
+        indices: Optional[str] = None,
+    ):
         """Search using 384-dimensional embeddings"""
-        return await self._search_with_embedding(query, "384d", "embedding_384d", limit, min_score)
+        return await self._search_with_embedding(
+            query,
+            "384d",
+            "embedding_384d",
+            limit,
+            min_score,
+            indices=indices,
+        )
     
-    async def search_with_embedding_768d(self, query: str, limit: int = 10, min_score: float = 0.5):
+    async def search_with_embedding_768d(
+        self,
+        query: str,
+        limit: int = 10,
+        min_score: float = 0.5,
+        indices: Optional[str] = None,
+    ):
         """Search using 768-dimensional embeddings"""
-        return await self._search_with_embedding(query, "768d", "embedding_768d", limit, min_score)
+        return await self._search_with_embedding(
+            query,
+            "768d",
+            "embedding_768d",
+            limit,
+            min_score,
+            indices=indices,
+        )
     
-    async def search_with_embedding_enhanced(self, query: str, limit: int = 10, min_score: float = 0.5):
+    async def search_with_embedding_enhanced(
+        self,
+        query: str,
+        limit: int = 10,
+        min_score: float = 0.5,
+        indices: Optional[str] = None,
+    ):
         """Search using enhanced 1155-dimensional embeddings"""
-        return await self._search_with_embedding(query, "1155d", "embedding_enhanced", limit, min_score)
+        return await self._search_with_embedding(
+            query,
+            "1155d",
+            "embedding_enhanced",
+            limit,
+            min_score,
+            indices=indices,
+        )
     
-    async def _search_with_embedding(self, query: str, model_type: str, field_name: str, limit: int, min_score: float):
+    async def _search_with_embedding(
+        self,
+        query: str,
+        model_type: str,
+        field_name: str,
+        limit: int,
+        min_score: float,
+        *,
+        indices: Optional[str] = None,
+    ):
         """Internal method to perform embedding-based search"""
         try:
             # Generate embedding for query
@@ -55,7 +103,8 @@ class SearchService:
                 query_vector=embedding,
                 field_name=field_name,
                 size=limit,
-                min_score=min_score
+                min_score=min_score,
+                indices=indices or "news_finbert_embeddings,*processed*,*news*",
             )
             
             return results

@@ -26,12 +26,23 @@ export interface FinBertRagStackProps extends cdk.StackProps {
     apiImageTag?: string;
     esSecretName?: string;
     apiTokensSecretName?: string;
+    uiServiceName?: string;
+    uiContainerPort?: number;
+    uiDesiredCount?: number;
+    uiMinCapacity?: number;
+    uiMaxCapacity?: number;
+    uiTargetCpuUtilization?: number;
+    uiTargetMemoryUtilization?: number;
+    uiRepositoryName?: string;
+    uiImageTag?: string;
 }
 
 export class FinBertRagStack extends cdk.Stack {
     public readonly cluster: ecs.Cluster;
     public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
     public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+    public readonly uiService?: ecs.FargateService;
+    public readonly uiLoadBalancer?: elbv2.ApplicationLoadBalancer;
 
     constructor(scope: Construct, id: string, props: FinBertRagStackProps) {
         super(scope, id, props);
@@ -186,6 +197,147 @@ export class FinBertRagStack extends cdk.Stack {
             'Allow HTTP traffic from ALB'
         );
 
+        // Optionally provision the Streamlit UI service
+        if (props.uiServiceName) {
+            const uiLogGroup = new logs.LogGroup(this, 'FinBertUiLogGroup', {
+                logGroupName: `/ecs/${props.uiServiceName}`,
+                retention: props.environment === 'prod' ? logs.RetentionDays.ONE_MONTH : logs.RetentionDays.ONE_WEEK,
+                removalPolicy: cdk.RemovalPolicy.DESTROY,
+            });
+
+            const uiExecutionRole = new iam.Role(this, 'FinBertUiExecutionRole', {
+                assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+                managedPolicies: [
+                    iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AmazonECSTaskExecutionRolePolicy'),
+                ],
+            });
+
+            const uiTaskRole = new iam.Role(this, 'FinBertUiTaskRole', {
+                assumedBy: new iam.ServicePrincipal('ecs-tasks.amazonaws.com'),
+            });
+
+            const uiRepositoryName = props.uiRepositoryName ?? (props.environment === 'prod' ? 'finbert-rag/ui' : 'finbert-rag/ui-dev');
+            const uiImageTag = props.uiImageTag ?? (props.environment === 'prod' ? 'prod' : 'latest-dev');
+
+            const uiRepositoryArn = cdk.Stack.of(this).formatArn({
+                service: 'ecr',
+                resource: 'repository',
+                resourceName: uiRepositoryName,
+                account,
+                region,
+            });
+
+            const uiRepository = ecr.Repository.fromRepositoryAttributes(this, 'FinBertUiRepository', {
+                repositoryName: uiRepositoryName,
+                repositoryArn: uiRepositoryArn,
+            });
+
+            const uiContainerPort = props.uiContainerPort ?? 8501;
+            const uiDesiredCount = props.uiDesiredCount ?? 1;
+            const uiMinCapacity = props.uiMinCapacity ?? 1;
+            const uiMaxCapacity = props.uiMaxCapacity ?? Math.max(uiDesiredCount, 2);
+            const uiTargetCpu = props.uiTargetCpuUtilization ?? 60;
+            const uiTargetMemory = props.uiTargetMemoryUtilization ?? 70;
+
+            const uiTaskDefinition = new ecs.FargateTaskDefinition(this, 'FinBertUiTaskDefinition', {
+                cpu: 512,
+                memoryLimitMiB: 1024,
+                executionRole: uiExecutionRole,
+                taskRole: uiTaskRole,
+            });
+
+            const uiContainer = uiTaskDefinition.addContainer('FinBertUiContainer', {
+                containerName: 'finbert-ui',
+                image: ecs.ContainerImage.fromEcrRepository(uiRepository, uiImageTag),
+                logging: ecs.LogDrivers.awsLogs({
+                    logGroup: uiLogGroup,
+                    streamPrefix: 'ecs',
+                }),
+                environment: {
+                    API_BASE_URL: `http://${this.loadBalancer.loadBalancerDnsName}`,
+                    ENVIRONMENT: props.environment,
+                },
+            });
+            uiContainer.addPortMappings({ containerPort: uiContainerPort });
+
+            this.uiService = new ecs.FargateService(this, 'FinBertUiService', {
+                cluster: this.cluster,
+                serviceName: props.uiServiceName,
+                taskDefinition: uiTaskDefinition,
+                desiredCount: uiDesiredCount,
+                assignPublicIp: false,
+                vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+            });
+
+            this.uiLoadBalancer = this.loadBalancer;
+
+            const albSecurityGroups = this.service.loadBalancer.connections.securityGroups;
+            for (const sg of albSecurityGroups) {
+                this.uiService.connections.allowFrom(sg, ec2.Port.tcp(uiContainerPort), 'Allow ALB to reach Streamlit UI');
+            }
+
+            const uiListener = this.loadBalancer.addListener('FinBertUiListener', {
+                port: uiContainerPort,
+                protocol: elbv2.ApplicationProtocol.HTTP,
+                open: true,
+            });
+
+            uiListener.addTargets('FinBertUiTargets', {
+                port: uiContainerPort,
+                protocol: elbv2.ApplicationProtocol.HTTP,
+                targets: [this.uiService],
+                healthCheck: {
+                    path: '/_stcore/health',
+                    healthyHttpCodes: '200',
+                    interval: cdk.Duration.seconds(30),
+                    timeout: cdk.Duration.seconds(15),
+                    healthyThresholdCount: 2,
+                    unhealthyThresholdCount: 5,
+                },
+            });
+
+            const uiScalableTarget = this.uiService.autoScaleTaskCount({
+                minCapacity: uiMinCapacity,
+                maxCapacity: uiMaxCapacity,
+            });
+
+            uiScalableTarget.scaleOnCpuUtilization('FinBertUiCpuScaling', {
+                targetUtilizationPercent: uiTargetCpu,
+                scaleInCooldown: cdk.Duration.minutes(5),
+                scaleOutCooldown: cdk.Duration.minutes(2),
+            });
+
+            uiScalableTarget.scaleOnMemoryUtilization('FinBertUiMemoryScaling', {
+                targetUtilizationPercent: uiTargetMemory,
+                scaleInCooldown: cdk.Duration.minutes(5),
+                scaleOutCooldown: cdk.Duration.minutes(2),
+            });
+
+            new cdk.CfnOutput(this, 'UiLoadBalancerDNS', {
+                value: this.loadBalancer.loadBalancerDnsName,
+                description: 'UI Load Balancer DNS Name',
+                exportName: `${props.environment}-finbert-ui-alb-dns`,
+            });
+
+            new cdk.CfnOutput(this, 'UiUrl', {
+                value: `http://${this.loadBalancer.loadBalancerDnsName}:${uiContainerPort}`,
+                description: 'UI URL',
+                exportName: `${props.environment}-finbert-ui-url`,
+            });
+
+            new cdk.CfnOutput(this, 'UiServiceName', {
+                value: this.uiService.serviceName,
+                description: 'UI ECS Service Name',
+                exportName: `${props.environment}-finbert-ui-service-name`,
+            });
+
+            new cdk.CfnOutput(this, 'UiTaskDefinitionArn', {
+                value: uiTaskDefinition.taskDefinitionArn,
+                description: 'UI Task Definition ARN',
+                exportName: `${props.environment}-finbert-ui-task-def`,
+            });
+        }
+
         // Outputs
         new cdk.CfnOutput(this, 'LoadBalancerDNS', {
             value: this.loadBalancer.loadBalancerDnsName,
@@ -209,6 +361,12 @@ export class FinBertRagStack extends cdk.Stack {
             value: this.service.service.serviceName,
             description: 'ECS Service Name',
             exportName: `${props.environment}-finbert-service-name`,
+        });
+
+        new cdk.CfnOutput(this, 'ApiTaskDefinitionArn', {
+            value: this.service.taskDefinition.taskDefinitionArn,
+            description: 'API Task Definition ARN',
+            exportName: `${props.environment}-finbert-api-task-def`,
         });
 
         new cdk.CfnOutput(this, 'VpcId', {
