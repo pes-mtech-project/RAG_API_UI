@@ -76,11 +76,19 @@ def add_sector_phrases(sector: str, payload: PhraseCreateRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+from typing import Optional as _Opt
+
+
+class PhraseThresholdUpdateRequest(PhraseUpdateRequest):
+    # Python 3.9 compatible Optional type
+    min_semantic_score: _Opt[float] = None
+
+
 @router.patch("/{sector}/phrases/{phrase_id}", response_model=SectorConfigResponse)
-def update_sector_phrase(sector: str, phrase_id: str, payload: PhraseUpdateRequest):
-    """Update phrase text and regenerate embedding"""
+def update_sector_phrase(sector: str, phrase_id: str, payload: PhraseThresholdUpdateRequest):
+    """Update phrase text, optional per-phrase threshold, and regenerate embedding"""
     try:
-        return update_phrase(sector, phrase_id, payload.text)
+        return update_phrase(sector, phrase_id, payload.text, payload.min_semantic_score)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 

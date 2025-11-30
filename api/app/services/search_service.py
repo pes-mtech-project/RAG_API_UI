@@ -104,7 +104,7 @@ class SearchService:
                 field_name=field_name,
                 size=limit,
                 min_score=min_score,
-                indices=indices or "news_finbert_embeddings,*processed*,*news*",
+                indices=indices or "news_finbert_embeddings*,*processed*,*news*",
             )
             
             return results
@@ -130,9 +130,10 @@ class SearchService:
         
         try:
             # Generate query embedding
+            # Note: embedding_service.generate_embedding expects 'model_type' kwarg
             embedding_result = self.embedding_service.generate_embedding(
-                text=query.query, 
-                embedding_model=embedding_type
+                text=query.query,
+                model_type=embedding_type
             )
             query_vector = embedding_result["embedding"]
             
@@ -140,7 +141,7 @@ class SearchService:
             embedding_field = self.embedding_service.get_embedding_field(embedding_type)
             
             # Determine indices to search
-            indices = query.source_index or "news_finbert_embeddings,*processed*,*news*"
+            indices = query.source_index or "news_finbert_embeddings*,*processed*,*news*"
             
             # Perform vector search
             es_response = self.es_service.vector_search(

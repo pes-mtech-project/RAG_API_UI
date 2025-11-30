@@ -167,13 +167,16 @@ def display_data_summary():
         st.warning("Unable to load system statistics. Please check if the API is running.")
 
 def display_similarity_search():
-    """Display similarity search tab"""
-    st.header("🔍 Similarity Search")
+    """Unified search tab supporting Similarity, Tags, and Hybrid"""
+    st.header("🔎 Search")
     
     # Search form
     with st.form("search_form"):
-        col1, col2 = st.columns([3, 1])
-        
+        col0, col1, col2 = st.columns([1.4, 3, 1])
+
+        with col0:
+            mode = st.selectbox("Mode", ["Similarity", "Tags", "Hybrid"], help="Choose search algorithm")
+
         with col1:
             query = st.text_input(
                 "Search Query",
@@ -205,23 +208,73 @@ def display_similarity_search():
                 source_index = None if selected_index == "All Indices" else selected_index
             else:
                 source_index = None
+
+            # Tags input for Tags and Hybrid modes
+            tags = []
+            if mode in ("Tags", "Hybrid"):
+                tags_text = st.text_input(
+                    "Tags (comma-separated)",
+                    value="",
+                    placeholder="e.g., energy, oil, renewables",
+                    help="Enter one or more tags separated by commas"
+                )
+                tags = [t.strip() for t in tags_text.split(',') if t.strip()]
+
+            tags = []
+            if mode in ("Tags", "Hybrid"):
+                tags_text = st.text_input("Tags (comma-separated)", value="energy, oil, renewables")
+                tags = [t.strip() for t in tags_text.split(',') if t.strip()]
         
         # Search button
         search_clicked = st.form_submit_button("🔍 Search", type="primary")
     
     # Perform search
-    if search_clicked and query:
-        search_data = {
-            "query": query,
-            "limit": limit,
-            "min_score": min_score,
-            "date_from": date_from.isoformat() if date_from else None,
-            "date_to": date_to.isoformat() if date_to else None,
-            "source_index": source_index
-        }
-        
-        with st.spinner("🔍 Searching for similar articles..."):
-            results = call_api("/search", method="POST", data=search_data)
+    if search_clicked:
+        results = None
+        if mode == "Similarity":
+            if not query:
+                st.warning("Please enter a query for similarity search.")
+            else:
+                search_data = {
+                    "query": query,
+                    "limit": limit,
+                    "min_score": min_score,
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None,
+                    "source_index": source_index,
+                }
+                with st.spinner("🔍 Running similarity search..."):
+                    # Prefer new endpoint; fallback to legacy /search
+                    results = call_api("/search/similarity", method="POST", data=search_data)
+                    if results is None:
+                        results = call_api("/search", method="POST", data=search_data)
+        elif mode == "Tags":
+            if not tags:
+                st.warning("Please provide at least one tag.")
+            else:
+                with st.spinner("🏷️ Running tags search (BM25)..."):
+                    results = call_api("/search/tags", method="POST", data={
+                        "tags": tags,
+                        "limit": limit,
+                        "min_score": min_score,
+                        "date_from": date_from.isoformat() if date_from else None,
+                        "date_to": date_to.isoformat() if date_to else None,
+                        "source_index": source_index,
+                        "tags_field": "structured_context",
+                    })
+        else:  # Hybrid
+            with st.spinner("🔀 Running hybrid search..."):
+                results = call_api("/search/hybrid", method="POST", data={
+                    "query": query or "",
+                    "tags": tags,
+                    "limit": limit,
+                    "min_score": min_score,
+                    "date_from": date_from.isoformat() if date_from else None,
+                    "date_to": date_to.isoformat() if date_to else None,
+                    "source_index": source_index,
+                    "semantic_field": "embedding_768d",
+                    "tags_field": "structured_context",
+                })
         
         if results:
             st.success(f"Found {len(results)} similar articles")
@@ -408,6 +461,13 @@ def display_search_configurations():
                         value=phrase.get("text", ""),
                         key=f"phrase_text_{sector}_{phrase['id']}",
                     )
+                    # Per-phrase semantic threshold control
+                    min_thr_val = float(phrase.get("min_semantic_score", 0.0))
+                    st.slider(
+                        "Min semantic score (per-phrase)",
+                        0.0, 1.0, min_thr_val, 0.05,
+                        key=f"phrase_thr_{sector}_{phrase['id']}"
+                    )
                     status_line = f"{status_icon} Status: {phrase.get('status', 'unknown')}"
                     if phrase.get("embedding_model"):
                         status_line += f" • Model: {phrase['embedding_model']}"
@@ -422,10 +482,11 @@ def display_search_configurations():
                         if not updated_text:
                             st.warning("Phrase cannot be empty")
                         else:
+                            updated_thr = st.session_state.get(f"phrase_thr_{sector}_{phrase['id']}")
                             result = call_api(
                                 f"/config/sectors/{sector}/phrases/{phrase['id']}",
                                 method="PATCH",
-                                data={"text": updated_text},
+                                data={"text": updated_text, "min_semantic_score": updated_thr},
                             )
                             if result is not None:
                                 st.success("Phrase updated")
@@ -603,7 +664,7 @@ def main():
     # Main content tabs
     tab1, tab2, tab3, tab4 = st.tabs([
         "📊 Data Summary",
-        "🔍 Similarity Search",
+        "🔍 Search",
         "⚙️ Search Configurations",
         "📈 Sector News",
     ])

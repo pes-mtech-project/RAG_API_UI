@@ -47,6 +47,7 @@ def _ensure_index() -> None:
                     "properties": {
                         "id": {"type": "keyword"},
                         "text": {"type": "text"},
+                        "min_semantic_score": {"type": "float"},
                         "embedding_model": {"type": "keyword"},
                         "status": {"type": "keyword"},
                         "updated_at": {"type": "date"},
@@ -172,6 +173,7 @@ def add_phrases(sector: str, phrases: List[str]) -> SectorConfigResponse:
         phrase_id = str(uuid.uuid4())
         phrase_record = _generate_phrase_record(text, config["semantic_field"])
         phrase_record["id"] = phrase_id
+        phrase_record.setdefault("min_semantic_score", 0.0)
         existing.append(phrase_record)
 
     config["phrases"] = existing
@@ -180,7 +182,7 @@ def add_phrases(sector: str, phrases: List[str]) -> SectorConfigResponse:
     return _deserialize_config(config)
 
 
-def update_phrase(sector: str, phrase_id: str, text: str) -> SectorConfigResponse:
+def update_phrase(sector: str, phrase_id: str, text: str, min_semantic_score: Optional[float] = None) -> SectorConfigResponse:
     config = _load_config(sector)
     found = False
     new_phrases: List[Dict[str, Any]] = []
@@ -189,6 +191,8 @@ def update_phrase(sector: str, phrase_id: str, text: str) -> SectorConfigRespons
             found = True
             updated_phrase = _generate_phrase_record(text, config["semantic_field"])
             updated_phrase["id"] = phrase_id
+            if min_semantic_score is not None:
+                updated_phrase["min_semantic_score"] = float(min_semantic_score)
             new_phrases.append(updated_phrase)
         else:
             new_phrases.append(phrase)

@@ -65,6 +65,13 @@ async def search_sector_news(
             if not doc_id:
                 continue
             score = result.get("score", 0.0)
+            # Apply per-phrase semantic threshold when configured
+            try:
+                min_thr = getattr(phrase, 'min_semantic_score', None)
+            except Exception:
+                min_thr = None
+            if min_thr is not None and score < float(min_thr):
+                continue
             entry = semantic_hits.setdefault(
                 doc_id,
                 {

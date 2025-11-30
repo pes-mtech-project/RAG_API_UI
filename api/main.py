@@ -609,7 +609,7 @@ async def debug_similarity_search(search_query: SearchQuery):
         if search_query.source_index:
             index_pattern = search_query.source_index
         else:
-            index_pattern = "news_finbert_embeddings,*processed*,*news*"
+            index_pattern = "news_finbert_embeddings**,*processed*,*news*"
         
         # Try different embedding field names
         embedding_fields = ["embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding"]
@@ -720,7 +720,7 @@ async def test_search_with_pregenerated(test_query: TestSearchQuery):
                 
                 # Try different index patterns
                 index_patterns = [
-                    "news_finbert_embeddings",
+                    "news_finbert_embeddings*",
                     "*processed*",
                     "*news*",
                     "*gdelt*"
@@ -801,7 +801,7 @@ async def similarity_search_with_embedding(search_query: EmbeddingSearchQuery):
             index_pattern = search_query.source_index
         else:
             # Search in available indices by default (prioritize finbert embeddings)
-            index_pattern = "news_finbert_embeddings,*processed*,*news*"
+            index_pattern = "news_finbert_embeddings*,*processed*,*news*"
         
         # Try different embedding field names
         embedding_fields = ["embedding_384d", "embedding", "embeddings", "vector", "sentence_embedding"]
@@ -1035,7 +1035,7 @@ async def cluster_diagnostics():
             
             # Try on a known index
             script_test_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=test_query,
                 timeout="10s"
             )
@@ -1069,7 +1069,7 @@ async def cluster_diagnostics():
             }
             
             cosine_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=cosine_test_query,
                 timeout="10s"
             )
@@ -1087,7 +1087,7 @@ async def cluster_diagnostics():
         
         # 6. Check Index Mappings for Embedding Fields
         try:
-            mapping = es.indices.get_mapping(index="news_finbert_embeddings")
+            mapping = es.indices.get_mapping(index="news_finbert_embeddings*")
             embedding_fields = {}
             
             for index_name, index_data in mapping.items():
@@ -1134,7 +1134,7 @@ async def test_script_methods(request: EmbeddingSearchQuery):
             }
             
             method1_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=method1_query,
                 timeout="30s"
             )
@@ -1169,7 +1169,7 @@ async def test_script_methods(request: EmbeddingSearchQuery):
             }
             
             method2_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=method2_query,
                 timeout="30s"
             )
@@ -1202,7 +1202,7 @@ async def test_script_methods(request: EmbeddingSearchQuery):
             }
             
             method3_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=method3_query,
                 timeout="30s"
             )
@@ -1237,7 +1237,7 @@ async def test_script_methods(request: EmbeddingSearchQuery):
                 }
                 
                 method4_result = es.search(
-                    index="news_finbert_embeddings",
+                    index="news_finbert_embeddings*",
                     body=method4_query,
                     timeout="30s"
                 )
@@ -1266,7 +1266,7 @@ async def test_script_methods(request: EmbeddingSearchQuery):
             }
             
             knn_result = es.search(
-                index="news_finbert_embeddings",
+                index="news_finbert_embeddings*",
                 body=knn_query,
                 timeout="30s"
             )
@@ -1309,7 +1309,7 @@ async def list_indices():
         except Exception:
             # Fallback: try known index patterns with count
             result = []
-            patterns = ["*processed*", "*gdelt*", "*news*", "news_finbert_embeddings"]
+            patterns = ["*processed*", "*gdelt*", "*news*", "news_finbert_embeddings*"]
             
             for pattern in patterns:
                 try:

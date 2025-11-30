@@ -16,7 +16,7 @@ API_BASE_URL = "http://localhost:8000"  # Use this for local testing
 def test_health_check():
     """Test the health endpoint"""
     try:
-        response = requests.get(f"{API_BASE_URL}/health", timeout=10)
+        response = requests.get(f"{API_BASE_URL}/_cat/indices?v", timeout=10)
         print(f"✅ Health Check: {response.status_code}")
         print(f"   Response: {response.json()}")
         return response.status_code == 200

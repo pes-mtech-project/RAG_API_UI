@@ -45,15 +45,55 @@ docker logs finbert-api  # Check model preloading status
 
 # Test new embedding endpoints
 curl http://localhost:8000/health
-# Test legacy endpoints (backward compatibility)
-curl -X POST http://your-api-url/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "HDFC Bank Finance", "limit": 5}'
 
-# Debug search issues  
-curl -X POST http://your-api-url/debug_search \
+# General Search APIs
+
+# 1) Similarity search (semantic only)
+curl -s -X POST "http://localhost:8000/search/similarity" \
   -H "Content-Type: application/json" \
-  -d '{"query": "search diagnostics", "limit": 5}'
+  -d '{
+        "query": "renewable energy investments",
+        "limit": 10,
+        "min_score": 0.4,
+        "date_from": "2025-11-01",
+        "date_to": "2025-11-15",
+        "source_index": "news_finbert_embeddings*"
+      }'
+
+# 2) Tags search (BM25 over tags; default field structured_context)
+curl -s -X POST "http://localhost:8000/search/tags" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "tags": ["energy", "oil", "renewables"],
+        "limit": 10,
+        "min_score": 0.0,
+        "date_from": "2025-11-01",
+        "date_to": "2025-11-15",
+        "source_index": "news_finbert_embeddings*",
+        "tags_field": "structured_context"
+      }'
+
+# 3) Hybrid search (semantic + BM25; same blender as /news_data/{sector})
+curl -s -X POST "http://localhost:8000/search/hybrid" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "query": "renewable energy investments",
+        "tags": ["energy", "oil", "renewables"],
+        "limit": 10,
+        "min_score": 0.4,
+        "date_from": "2025-11-01",
+        "date_to": "2025-11-15",
+        "source_index": "news_finbert_embeddings*",
+        "semantic_field": "embedding_768d",
+        "tags_field": "structured_context"
+      }'
+
+# Sector Hybrid API (uses saved sector phrases/tags)
+curl -s -G "http://localhost:8000/news_data/energy" \
+  --data-urlencode "limit=10" \
+  --data-urlencode "min_score=0.4" \
+  --data-urlencode "date_from=2025-11-01" \
+  --data-urlencode "date_to=2025-11-15"
 ```
 
 ## 📈 **Changelog & Recent Improvements**

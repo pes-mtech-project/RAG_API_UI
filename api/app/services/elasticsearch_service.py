@@ -110,7 +110,7 @@ class ElasticsearchService:
             
             # Get indices stats
             indices_stats = {}
-            index_patterns = ["*news*", "*gdelt*", "*processed*", "news_finbert_embeddings"]
+            index_patterns = ["*news*", "*gdelt*", "*processed*", "news_finbert_embeddings*"]
             
             total_documents = 0
             for pattern in index_patterns:
@@ -159,7 +159,7 @@ class ElasticsearchService:
     def vector_search(self, 
                      query_vector: List[float], 
                      embedding_field: str,
-                     indices: str = "news_finbert_embeddings,*processed*,*news*",
+                     indices: str = "news_finbert_embeddings*,*processed*,*news*",
                      size: int = 10,
                      min_score: float = 0.5) -> Dict[str, Any]:
         """
@@ -210,7 +210,7 @@ class ElasticsearchService:
             logger.error(f"Vector search failed for field {embedding_field}: {e}")
             raise
     
-    def test_embedding_field(self, field_name: str, dimension: int = 384, index: str = "news_finbert_embeddings") -> bool:
+    def test_embedding_field(self, field_name: str, dimension: int = 384, index: str = "news_finbert_embeddings*") -> bool:
         """Test if an embedding field exists and works for k-NN search"""
         try:
             # Use a test vector with correct dimension
@@ -234,7 +234,7 @@ class ElasticsearchService:
                                       field_name: str,
                                       size: int = 10,
                                       min_score: float = 0.5,
-                                      indices: str = "news_finbert_embeddings,*processed*,*news*") -> List[Dict[str, Any]]:
+                                      indices: str = "news_finbert_embeddings*,*processed*,*news*") -> List[Dict[str, Any]]:
         """
         Perform asynchronous k-NN search using embedding vector
         
