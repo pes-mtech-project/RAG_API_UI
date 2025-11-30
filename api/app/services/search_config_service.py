@@ -12,7 +12,6 @@ from elastic_transport import ObjectApiResponse
 from elasticsearch import NotFoundError
 
 from .elasticsearch_service import elasticsearch_service
-from .embedding_service import embedding_service
 from ..config import elasticsearch_config
 from ..models import (
     SectorConfigCreate,
@@ -24,6 +23,8 @@ from ..models import (
 
 CONFIG_INDEX = getattr(elasticsearch_config, "search_config_index", "finbert-search-configs")
 MAX_SECTORS = 20
+# Allow larger curated phrase lists per sector (banking/IT datasets exceed 100 entries)
+MAX_PHRASES_PER_SECTOR = 250
 
 
 def _get_es_client():
@@ -166,8 +167,8 @@ def add_phrases(sector: str, phrases: List[str]) -> SectorConfigResponse:
     config = _load_config(sector)
     existing = config.get("phrases") or []
 
-    if len(existing) + len(phrases) > 100:
-        raise ValueError("Cannot store more than 100 phrases per sector")
+    if len(existing) + len(phrases) > MAX_PHRASES_PER_SECTOR:
+        raise ValueError(f"Cannot store more than {MAX_PHRASES_PER_SECTOR} phrases per sector")
 
     for text in phrases:
         phrase_id = str(uuid.uuid4())
@@ -227,23 +228,11 @@ def delete_config(sector: str) -> None:
 
 
 def _generate_phrase_record(text: str, semantic_field: str) -> Dict[str, Any]:
-    model_type = _resolve_model_type(semantic_field)
-    try:
-        embedding_result = embedding_service.generate_embedding(text, model_type)
-        embedding = embedding_result["embedding"]
-        status = "ready"
-        error: Optional[str] = None
-    except Exception as exc:
-        embedding = None
-        status = "failed"
-        error = str(exc)
-
     return {
         "text": text,
-        "embedding_model": model_type,
-        "embedding": embedding,
-        "status": status,
-        "error": error,
+        "embedding_model": _resolve_model_type(semantic_field),
+        "status": "ready",
+        "error": None,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
