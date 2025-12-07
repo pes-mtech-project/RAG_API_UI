@@ -9,9 +9,10 @@ from typing import Optional, List, Dict, Any, Tuple
 from elasticsearch import Elasticsearch
 from elasticsearch.exceptions import ConnectionError, NotFoundError
 
-from ..config import elasticsearch_config
+from ..config import elasticsearch_config, rag_config
 
 logger = logging.getLogger(__name__)
+
 
 class ElasticsearchService:
     """
@@ -22,6 +23,7 @@ class ElasticsearchService:
     def __init__(self):
         self._client: Optional[Elasticsearch] = None
         self._connection_verified = False
+        self._mapping_cache: Dict[str, Dict[str, Any]] = {}
     
     def get_client(self) -> Elasticsearch:
         """
@@ -177,6 +179,7 @@ class ElasticsearchService:
         """
         try:
             client = self.get_client()
+            rag_filters = self.build_rag_filters(indices)
             
             # Build k-NN search query with cosine similarity
             # Use the knn parameter at top level (Elasticsearch 8.x format)
@@ -185,7 +188,8 @@ class ElasticsearchService:
                     "field": embedding_field,
                     "query_vector": query_vector,
                     "k": size,
-                    "num_candidates": size * 3  # For better recall
+                    "num_candidates": size * 3,  # For better recall
+                    **({"filter": {"bool": {"filter": rag_filters}}} if rag_filters else {}),
                 },
                 "size": size,
                 "min_score": min_score,
@@ -250,6 +254,7 @@ class ElasticsearchService:
         """
         try:
             client = self.get_client()
+            rag_filters = self.build_rag_filters(indices)
             
             # Construct k-NN search body for Elasticsearch 8.x
             search_body = {
@@ -257,7 +262,8 @@ class ElasticsearchService:
                     "field": field_name,
                     "query_vector": query_vector,
                     "k": size,
-                    "num_candidates": size * 5
+                    "num_candidates": size * 5,
+                    **({"filter": {"bool": {"filter": rag_filters}}} if rag_filters else {}),
                 },
                 "size": size,
                 "_source": True
@@ -310,5 +316,77 @@ class ElasticsearchService:
         else:
             return []
 
+    def build_rag_filters(self, indices: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Build RAG gating filters only when required fields exist in the index mappings.
+        If the fields are missing, returns an empty list so semantic search still works.
+        """
+        try:
+            properties = self._get_index_properties(indices or "news_finbert_embeddings*,*processed*,*news*")
+        except Exception as e:
+            logger.warning(f"Failed to inspect mappings for RAG filters: {e}")
+            properties = {}
+
+        filters: List[Dict[str, Any]] = []
+
+        if self._field_in_properties(properties, rag_config.usable_for_rag_field):
+            filters.append({"term": {rag_config.usable_for_rag_field: True}})
+
+        if self._field_in_properties(properties, rag_config.doc_type_field):
+            filters.append({"terms": {rag_config.doc_type_field: rag_config.allowed_doc_types_for_rag}})
+
+        if self._field_in_properties(properties, rag_config.quality_score_field):
+            filters.append({"range": {rag_config.quality_score_field: {"gte": rag_config.min_quality_score_for_rag}}})
+
+        if not filters:
+            logger.info("Skipping RAG gating filters because required fields are missing in mappings")
+
+        return filters
+
+    def _get_index_properties(self, indices: str) -> Dict[str, Any]:
+        """Fetch and cache index properties for mapping inspection."""
+        if indices in self._mapping_cache:
+            return self._mapping_cache[indices]
+
+        client = self.get_client()
+        mapping = client.indices.get_mapping(index=indices)
+        # Use properties from the first index returned
+        for _, data in mapping.items():
+            props = data.get("mappings", {}).get("properties", {}) or {}
+            self._mapping_cache[indices] = props
+            return props
+
+        self._mapping_cache[indices] = {}
+        return {}
+
+    def _field_in_properties(self, properties: Dict[str, Any], field_path: str) -> bool:
+        """Check if a dotted field path exists in mapping properties."""
+        if not properties:
+            return False
+
+        parts = field_path.split(".")
+        current = {"properties": properties}
+
+        for part in parts:
+            props = current.get("properties", {})
+            fields = current.get("fields", {})
+
+            if part in props:
+                current = props[part]
+            elif part in fields:
+                current = fields[part]
+            else:
+                return False
+
+        return True
+
 # Global service instance
 elasticsearch_service = ElasticsearchService()
+
+
+def build_rag_filters(indices: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    Compatibility wrapper so existing callers can request RAG filters.
+    Applies filters only when mapping fields are present.
+    """
+    return elasticsearch_service.build_rag_filters(indices)

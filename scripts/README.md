@@ -53,6 +53,8 @@ This directory contains scripts for managing Docker containers locally and in pr
 # 2. Validate deployment prerequisites  
 ./scripts/validate-ecr-deployment.sh
 
+
+
 # 3. Deploy to AWS ECR securely (if validation passes)
 ./scripts/deploy-ecr-secure.sh
 

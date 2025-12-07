@@ -10,7 +10,7 @@ from typing import Dict, List, Optional, Set
 
 from elasticsearch import NotFoundError
 
-from .elasticsearch_service import elasticsearch_service
+from .elasticsearch_service import elasticsearch_service, build_rag_filters
 from .search_service import search_service
 from .search_config_service import get_config
 from ..models import SectorNewsResult, SectorNewsResponse, SectorNewsQueryInfo
@@ -94,7 +94,12 @@ async def search_sector_news(
         try:
             response = client.search(
                 index=config.index_pattern,
-                body=_bm25_query(config.tags_field, config.tags, size=min(limit * 3, 100)),
+                body=_bm25_query(
+                    config.tags_field,
+                    config.tags,
+                    size=min(limit * 3, 100),
+                    indices=config.index_pattern,
+                ),
             )
         except NotFoundError:
             response = {}
@@ -145,7 +150,7 @@ async def search_sector_news(
     )
 
 
-def _bm25_query(field: str, tags: List[str], *, size: int) -> Dict:
+def _bm25_query(field: str, tags: List[str], *, size: int, indices: Optional[str] = None) -> Dict:
     should_clauses = [{"match": {field: tag}} for tag in tags]
     body = {
         "size": size,
@@ -153,6 +158,7 @@ def _bm25_query(field: str, tags: List[str], *, size: int) -> Dict:
             "bool": {
                 "should": should_clauses,
                 "minimum_should_match": 1 if should_clauses else 0,
+                "filter": build_rag_filters(indices),
             }
         },
     }

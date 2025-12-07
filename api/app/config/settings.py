@@ -66,7 +66,22 @@ class EmbeddingConfig:
         self.dim_768d = 768
         self.dim_1155d = 1155  # 384 + 768 + 3 (sentiment)
 
+class RAGConfig:
+    """Quality and gating settings for RAG retrieval"""
+
+    def __init__(self):
+        self.min_quality_score_for_rag = float(os.getenv("MIN_QUALITY_SCORE_FOR_RAG", 0.5))
+        doc_types = os.getenv(
+            "ALLOWED_DOC_TYPES_FOR_RAG",
+            "news_article,press_release",
+        )
+        self.allowed_doc_types_for_rag = [t.strip() for t in doc_types.split(",") if t.strip()]
+        self.usable_for_rag_field = os.getenv("USABLE_FOR_RAG_FIELD", "usable_for_rag")
+        self.doc_type_field = os.getenv("DOC_TYPE_FIELD", "doc_type.keyword")
+        self.quality_score_field = os.getenv("QUALITY_SCORE_FIELD", "quality_score")
+
 # Global configuration instances
 elasticsearch_config = ElasticsearchConfig()
 api_config = APIConfig()
 embedding_config = EmbeddingConfig()
+rag_config = RAGConfig()
