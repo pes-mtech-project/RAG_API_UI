@@ -378,7 +378,7 @@ def display_search_configurations():
                     result = call_api("/config/sectors", method="POST", data=payload)
                     if result is not None:
                         st.success(f"Sector '{payload['sector']}' created")
-                        st.experimental_rerun()
+                        st.rerun()
 
     if not configs:
         st.info("No sector configurations defined yet. Create one to get started.")
@@ -423,7 +423,7 @@ def display_search_configurations():
                     result = call_api(f"/config/sectors/{sector}", method="PUT", data=payload)
                     if result is not None:
                         st.success("Settings updated")
-                        st.experimental_rerun()
+                        st.rerun()
 
             st.markdown("---")
             st.subheader("Semantic search phrases")
@@ -447,7 +447,7 @@ def display_search_configurations():
                         )
                         if result is not None:
                             st.success("Phrase added")
-                            st.experimental_rerun()
+                            st.rerun()
 
             for phrase in details.get("phrases", []):
                 status_icon = {
@@ -490,7 +490,7 @@ def display_search_configurations():
                             )
                             if result is not None:
                                 st.success("Phrase updated")
-                                st.experimental_rerun()
+                                st.rerun()
                     if col_d.form_submit_button("Remove", help="Remove phrase"):
                         result = call_api(
                             f"/config/sectors/{sector}/phrases/{phrase['id']}",
@@ -498,7 +498,7 @@ def display_search_configurations():
                         )
                         if result is not None:
                             st.success("Phrase removed")
-                            st.experimental_rerun()
+                            st.rerun()
 
             st.markdown("---")
             st.subheader("Tags for BM25 search")
@@ -521,7 +521,7 @@ def display_search_configurations():
                         )
                         if result is not None:
                             st.success("Tag added")
-                            st.experimental_rerun()
+                            st.rerun()
 
             tags = details.get("tags", [])
             if tags:
@@ -535,7 +535,7 @@ def display_search_configurations():
                         )
                         if result is not None:
                             st.success("Tag removed")
-                            st.experimental_rerun()
+                            st.rerun()
             else:
                 st.info("No tags configured yet.")
 
@@ -554,7 +554,7 @@ def display_search_configurations():
                         result = call_api(f"/config/sectors/{sector}", method="DELETE")
                         if result is not None:
                             st.success(f"Sector '{sector}' deleted")
-                            st.experimental_rerun()
+                            st.rerun()
 
 
 def display_sector_search():

@@ -297,7 +297,11 @@ class ElasticsearchService:
                     "sentiment": source.get('sentiment', {"label": "neutral", "score": 0.0}),
                     "themes": self._safe_list_conversion(source.get('v2_themes') or source.get('themes', [])),
                     "organizations": self._safe_list_conversion(source.get('organizations', [])),
-                    "source_index": hit.get('_index', '')
+                    "source_index": hit.get('_index', ''),
+                    "companies": source.get('companies'),
+                    "all_tags": source.get('all_tags'),
+                    "fb_sector": source.get('fb_sector'),
+                    "keywords": source.get('keywords'),
                 }
                 results.append(result)
             

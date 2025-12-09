@@ -22,10 +22,12 @@ class BlendResultsTest(unittest.TestCase):
             },
         }
 
-        results = sector_news_service._blend_results(doc_hits, 0.8, 10.0, limit=1, min_score=None)
+        results = sector_news_service._blend_results(
+            doc_hits, 0.8, 10.0, limit=1, min_score=None, sector="banking"
+        )
 
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].id, "doc1")
+        self.assertEqual(results[0].news_id, "doc1")
         self.assertGreater(results[0].score, 0)
 
     def test_blend_results_respects_min_score(self):
@@ -39,7 +41,9 @@ class BlendResultsTest(unittest.TestCase):
             }
         }
 
-        results = sector_news_service._blend_results(doc_hits, 0.1, 1.0, limit=5, min_score=1.1)
+        results = sector_news_service._blend_results(
+            doc_hits, 0.1, 1.0, limit=5, min_score=1.1, sector="it"
+        )
         self.assertEqual(len(results), 0)
 
     def test_within_date_range_handles_compact_dates(self):

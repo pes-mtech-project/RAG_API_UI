@@ -13,6 +13,8 @@ echo "=================================================="
 AWS_REGION="ap-south-1"
 PROJECT_NAME="finbert-rag"
 VERSION="v2.0.0"
+# Allow overriding target AWS account (production registry)
+TARGET_AWS_ACCOUNT_ID="${TARGET_AWS_ACCOUNT_ID:-906348407450}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -89,8 +91,13 @@ check_prerequisites() {
 }
 
 get_aws_account_id() {
-    AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
-    log_info "AWS Account ID: ${AWS_ACCOUNT_ID}"
+    if [[ -n "${TARGET_AWS_ACCOUNT_ID}" ]]; then
+        AWS_ACCOUNT_ID="${TARGET_AWS_ACCOUNT_ID}"
+        log_info "Using target AWS Account ID from env: ${AWS_ACCOUNT_ID}"
+    else
+        AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+        log_info "AWS Account ID (from STS): ${AWS_ACCOUNT_ID}"
+    }
 }
 
 setup_ecr_variables() {

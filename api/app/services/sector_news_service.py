@@ -128,7 +128,14 @@ async def search_sector_news(
                 entry["source"] = base_info
             bm25_max = max(bm25_max, score)
 
-    results = _blend_results(semantic_hits, semantic_max, bm25_max, limit, min_score)
+    results = _blend_results(
+        semantic_hits,
+        semantic_max,
+        bm25_max,
+        limit,
+        min_score,
+        sector=sector,
+    )
 
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -188,6 +195,8 @@ def _blend_results(
     bm25_max: float,
     limit: int,
     min_score: Optional[float],
+    *,
+    sector: str,
 ) -> List[SectorNewsResult]:
     results: List[SectorNewsResult] = []
 
@@ -208,19 +217,24 @@ def _blend_results(
             continue
 
         result = SectorNewsResult(
-            id=doc_id,
+            news_id=doc_id,
             score=final_score,
             semantic_score=semantic_score,
             bm25_score=bm25_score,
-            title=base.get("title"),
+            headline=base.get("title"),
             summary=base.get("summary"),
-            full_text=base.get("full_text"),
+            body=base.get("full_text"),
             url=base.get("url"),
             date=base.get("date"),
             published_dt=base.get("published_dt"),
+            sector=sector,
             source_index=base.get("source_index"),
             tags_matched=sorted(data.get("tags_matched") or []),
             phrase_matches=sorted(data.get("phrase_matches") or []),
+            companies=base.get("companies"),
+            all_tags=base.get("all_tags"),
+            fb_sector=base.get("fb_sector"),
+            keywords=base.get("keywords"),
         )
         results.append(result)
 
@@ -237,6 +251,10 @@ def _extract_base_from_result(result: Dict) -> Dict:
         "date": result.get("date"),
         "published_dt": result.get("published_dt"),
         "source_index": result.get("source_index"),
+        "companies": result.get("companies"),
+        "all_tags": result.get("all_tags"),
+        "fb_sector": result.get("fb_sector"),
+        "keywords": result.get("keywords"),
     }
 
 
@@ -250,6 +268,10 @@ def _extract_base_from_hit(hit: Dict) -> Dict:
         "date": source.get("date"),
         "published_dt": source.get("published_dt"),
         "source_index": hit.get("_index"),
+        "companies": source.get("companies"),
+        "all_tags": source.get("all_tags"),
+        "fb_sector": source.get("fb_sector"),
+        "keywords": source.get("keywords"),
     }
 
 
