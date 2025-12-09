@@ -97,7 +97,7 @@ get_aws_account_id() {
     else
         AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
         log_info "AWS Account ID (from STS): ${AWS_ACCOUNT_ID}"
-    }
+    fi
 }
 
 setup_ecr_variables() {
