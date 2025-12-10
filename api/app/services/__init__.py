@@ -19,6 +19,7 @@ from .search_config_service import (
     delete_config,
 )
 from .sector_news_service import search_sector_news
+from .sector_data_service import search_sector_data
 
 # Create service instances
 elasticsearch_service = ElasticsearchService()
@@ -44,4 +45,5 @@ __all__ = [
     'remove_phrase',
     'delete_config',
     'search_sector_news',
+    'search_sector_data',
 ]

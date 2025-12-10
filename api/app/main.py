@@ -8,7 +8,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import api_config
-from .routers import search_router, legacy_router, config_router, news_router, general_search_router
+from .routers import (
+    search_router,
+    legacy_router,
+    config_router,
+    news_router,
+    general_search_router,
+    sector_data_router,
+)
 from .services import elasticsearch_service, embedding_service
 
 # Setup logging
@@ -61,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router)
     app.include_router(news_router)
     app.include_router(general_search_router)
+    app.include_router(sector_data_router)
 
     return app
 
